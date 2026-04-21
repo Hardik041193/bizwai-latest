@@ -16,6 +16,32 @@ const routes: RouteRecordRaw[] = [
         component: () => import(/* webpackChunkName: "admin-dashboard" */ '../views/admin/dashboard.vue'),
         meta: { requiresAuth: true, requiresAdmin: true },
     },
+
+    // ── QuickBooks ──
+    {
+        path: '/quickbooks/connect',
+        name: 'quickbooks-connect',
+        component: () => import(/* webpackChunkName: "qb-connect" */ '../views/quickbooks/connect.vue'),
+        meta: { requiresAuth: true },
+    },
+    {
+        path: '/quickbooks/connected',
+        name: 'quickbooks-connected',
+        component: () => import(/* webpackChunkName: "qb-connected" */ '../views/quickbooks/connected.vue'),
+        meta: { requiresAuth: true },
+    },
+    {
+        path: '/quickbooks/error',
+        name: 'quickbooks-error',
+        component: () => import(/* webpackChunkName: "qb-error" */ '../views/quickbooks/error.vue'),
+        meta: { requiresAuth: true },
+    },
+    {
+        path: '/quickbooks/dashboard',
+        name: 'quickbooks-dashboard',
+        component: () => import(/* webpackChunkName: "qb-dashboard" */ '../views/quickbooks/dashboard.vue'),
+        meta: { requiresAuth: true },
+    },
     {
         path: '/analytics',
         name: 'analytics',

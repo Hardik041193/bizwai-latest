@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\QuickBooksController;
 use Illuminate\Support\Facades\Route;
 
 // ── Public auth ──
@@ -27,4 +28,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/email/resend', [AuthController::class, 'resendVerification'])
         ->middleware('throttle:6,1');
+
+    // ── QuickBooks ──
+    Route::prefix('quickbooks')->name('quickbooks.')->group(function () {
+        Route::get('/connect',      [QuickBooksController::class, 'connect'])->name('connect');
+        Route::get('/status',       [QuickBooksController::class, 'status'])->name('status');
+        Route::get('/summary',      [QuickBooksController::class, 'summary'])->name('summary');
+        Route::post('/sync',        [QuickBooksController::class, 'sync'])->name('sync')->middleware('throttle:5,1');
+        Route::post('/disconnect',  [QuickBooksController::class, 'disconnect'])->name('disconnect');
+        Route::get('/accounts',     [QuickBooksController::class, 'accounts'])->name('accounts');
+        Route::get('/invoices',     [QuickBooksController::class, 'invoices'])->name('invoices');
+        Route::get('/transactions', [QuickBooksController::class, 'transactions'])->name('transactions');
+    });
 });

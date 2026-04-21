@@ -404,6 +404,37 @@
                             </ul>
                         </li>
 
+                        <!-- ── QuickBooks ── -->
+                        <h2 class="py-3 px-7 flex items-center uppercase font-extrabold bg-white-light/30 dark:bg-dark dark:bg-opacity-[0.08] -mx-4 mb-1">
+                            <svg class="w-4 h-5 flex-none hidden" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                            <span>QuickBooks</span>
+                        </h2>
+                        <li class="nav-item">
+                            <router-link to="/quickbooks/dashboard" class="group" @click="toggleMobileMenu">
+                                <div class="flex items-center">
+                                    <svg class="group-hover:!text-primary shrink-0" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M6 2h12a2 2 0 012 2v16a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z" stroke="currentColor" stroke-width="1.5"/>
+                                        <path opacity="0.5" d="M9 7h6M9 11h6M9 15h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                                    </svg>
+                                    <span class="ltr:pl-3 rtl:pr-3 text-black dark:text-[#506690] dark:group-hover:text-white-dark">QB Dashboard</span>
+                                    <span v-if="qbConnected" class="ltr:ml-auto rtl:mr-auto badge badge-outline-success text-xs px-1 py-0">Live</span>
+                                </div>
+                            </router-link>
+                        </li>
+                        <li class="nav-item">
+                            <router-link to="/quickbooks/connect" class="group" @click="toggleMobileMenu">
+                                <div class="flex items-center">
+                                    <svg class="group-hover:!text-primary shrink-0" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path opacity="0.5" d="M3 12a9 9 0 1118 0A9 9 0 013 12z" fill="currentColor"/>
+                                        <path d="M12 8v4l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                                    </svg>
+                                    <span class="ltr:pl-3 rtl:pr-3 text-black dark:text-[#506690] dark:group-hover:text-white-dark">Connect QBO</span>
+                                </div>
+                            </router-link>
+                        </li>
+
                         <h2 class="py-3 px-7 flex items-center uppercase font-extrabold bg-white-light/30 dark:bg-dark dark:bg-opacity-[0.08] -mx-4 mb-1">
                             <svg
                                 class="w-4 h-5 flex-none hidden"
@@ -1282,15 +1313,22 @@
 </template>
 
 <script lang="ts" setup>
-    import { ref, onMounted } from 'vue';
+    import { ref, computed, onMounted } from 'vue';
 
     import { useAppStore } from '@/stores/index';
+    import { useQuickBooksStore } from '@/stores/quickbooks';
     import VueCollapsible from 'vue-height-collapsible/vue3';
     const store = useAppStore();
+    const qbStore = useQuickBooksStore();
     const activeDropdown: any = ref('');
     const subActive: any = ref('');
 
+    const qbConnected = computed(() => qbStore.isConnected);
+
     onMounted(() => {
+        // Fetch QuickBooks connection status to show/hide the Live badge
+        qbStore.fetchStatus();
+
         const selector = document.querySelector('.sidebar ul a[href="' + window.location.pathname + '"]');
         if (selector) {
             selector.classList.add('active');

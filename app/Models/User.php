@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -29,5 +30,15 @@ class User extends Authenticatable implements MustVerifyEmail
     public function isVerified(): bool
     {
         return ! is_null($this->email_verified_at);
+    }
+
+    public function quickBooksToken(): HasOne
+    {
+        return $this->hasOne(QuickBooksToken::class);
+    }
+
+    public function hasQuickBooksConnected(): bool
+    {
+        return $this->quickBooksToken()->exists();
     }
 }
