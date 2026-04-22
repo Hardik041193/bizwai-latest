@@ -31,7 +31,7 @@
                 <div class="relative flex w-full flex-col items-center justify-center gap-6 px-4 pb-16 pt-6 sm:px-6 lg:max-w-[667px]">
                     <div class="flex w-full max-w-[440px] items-center gap-2 lg:absolute lg:end-6 lg:top-6 lg:max-w-full">
                         <router-link to="/" class="w-8 block lg:hidden">
-                            <img src="/assets/images/logo.svg" alt="Logo" class="mx-auto w-10" />
+                            <img src="/assets/images/bizwai.png" alt="Bizwai" class="mx-auto h-8 w-auto object-contain" />
                         </router-link>
                         <div class="dropdown ms-auto w-max">
                             <Popper :placement="store.rtlClass === 'rtl' ? 'bottom-start' : 'bottom-end'" offsetDistance="8">
@@ -185,7 +185,7 @@
                             </button>
                         </form>
                     </div>
-                    <p class="absolute bottom-6 w-full text-center dark:text-white">© {{ new Date().getFullYear() }}.VRISTO All Rights Reserved.</p>
+                    <p class="absolute bottom-6 w-full text-center dark:text-white">© {{ new Date().getFullYear() }}.Bizwai. All Rights Reserved.</p>
                 </div>
             </div>
         </div>

@@ -21,18 +21,19 @@ class QuickBooksController extends Controller
     public function __construct(private readonly QuickBooksService $quickBooks) {}
 
     // ──────────────────────────────────────────────────────────────────────
-    // OAuth Flow
+    // OAuth Flow  (admin only)
     // ──────────────────────────────────────────────────────────────────────
 
     /**
-     * Return the Intuit OAuth authorization URL for the SPA to redirect to.
-     * The SPA should do: window.location.href = response.data.url
-     *
-     * User ID is stored in Cache keyed by the OAuth state parameter so the
-     * callback can identify who authorized — works with stateless Bearer-token SPA auth.
+     * Return the Intuit OAuth authorization URL.
+     * Only admin users may connect a QuickBooks account.
      */
     public function connect(Request $request): JsonResponse
     {
+        if (! $request->user()->isAdmin()) {
+            return response()->json(['message' => 'Only administrators can connect QuickBooks.'], 403);
+        }
+
         $url = $this->quickBooks->getAuthorizationUrl($request->user()->id);
 
         return response()->json(['url' => $url]);
@@ -40,8 +41,7 @@ class QuickBooksController extends Controller
 
     /**
      * Intuit redirects the browser here after the user grants permission.
-     * This is a web route (not API) because Intuit performs a browser redirect.
-     * On success, redirects the SPA to /quickbooks/connected.
+     * Web route — Intuit performs a browser redirect here.
      */
     public function callback(Request $request): RedirectResponse
     {
@@ -56,11 +56,24 @@ class QuickBooksController extends Controller
         $realmId = $request->input('realmId');
         $state   = $request->input('state', '');
 
-        // Recover user ID from Cache (written during connect() via the OAuth state key).
-        // Falls back to Auth::id() only when session-based login is active (e.g. testing).
-        $userId = Cache::pull("qb_oauth_state_{$state}") ?? Auth::id();
+        // Security: a missing/empty state parameter means CSRF — reject immediately.
+        if (empty($state)) {
+            Log::warning('QuickBooks callback: empty state parameter — possible CSRF attempt.', [
+                'ip' => $request->ip(),
+            ]);
+            return redirect("{$frontendBase}/quickbooks/error?message=invalid_state");
+        }
+
+        // Recover user ID from the cache entry written by connect().
+        // We intentionally do NOT fall back to Auth::id() — the state MUST match
+        // what we stored so that a forged callback cannot be linked to an active session.
+        $userId = Cache::pull("qb_oauth_state_{$state}");
 
         if (! $userId) {
+            Log::warning('QuickBooks callback: state not found in cache — expired or forged.', [
+                'state' => $state,
+                'ip'    => $request->ip(),
+            ]);
             return redirect("{$frontendBase}/quickbooks/error?message=unauthenticated");
         }
 
@@ -72,8 +85,6 @@ class QuickBooksController extends Controller
             return redirect("{$frontendBase}/quickbooks/error?message={$message}");
         }
 
-        // Trigger an initial background sync — wrapped so a sync failure
-        // never prevents the success redirect from reaching the user.
         try {
             $token = QuickBooksToken::where('user_id', $userId)->first();
             if ($token) {
@@ -89,32 +100,62 @@ class QuickBooksController extends Controller
         return redirect("{$frontendBase}/quickbooks/connected");
     }
 
+    // ──────────────────────────────────────────────────────────────────────
+    // Status
+    // ──────────────────────────────────────────────────────────────────────
+
     /**
-     * Return the connection status for the authenticated user.
+     * Connection status.
+     *
+     * Admin  → checks their own token and returns token metadata.
+     * User   → checks if any admin has connected (company connection).
+     *          Returns connected=true if the company has QBO, so the user
+     *          knows their invoice data is available.
      */
     public function status(Request $request): JsonResponse
     {
-        $token = $request->user()->quickBooksToken;
+        $user = $request->user();
 
-        if (! $token) {
-            return response()->json(['connected' => false]);
+        if ($user->isAdmin()) {
+            $token = $user->quickBooksToken;
+
+            if (! $token) {
+                return response()->json(['connected' => false, 'role' => 'admin']);
+            }
+
+            return response()->json([
+                'connected'                => true,
+                'role'                     => 'admin',
+                'realm_id'                 => $token->realm_id,
+                'token_expires_at'         => $token->token_expires_at?->toIso8601String(),
+                'refresh_token_expires_at' => $token->refresh_token_expires_at?->toIso8601String(),
+                'access_token_expired'     => $token->isAccessTokenExpired(),
+            ]);
         }
 
+        // Regular user — check for any admin's company token.
+        $companyToken = QuickBooksToken::getCompanyToken();
+
         return response()->json([
-            'connected'                 => true,
-            'realm_id'                  => $token->realm_id,
-            'token_expires_at'          => $token->token_expires_at?->toIso8601String(),
-            'refresh_token_expires_at'  => $token->refresh_token_expires_at?->toIso8601String(),
-            'access_token_expired'      => $token->isAccessTokenExpired(),
+            'connected'          => (bool) $companyToken,
+            'role'               => 'user',
+            'is_company_account' => true,
         ]);
     }
 
+    // ──────────────────────────────────────────────────────────────────────
+    // Sync / Disconnect  (admin only)
+    // ──────────────────────────────────────────────────────────────────────
+
     /**
-     * Trigger a manual sync for the authenticated user's QBO account.
-     * Rate-limited to 5 requests per minute via route definition.
+     * Trigger a manual sync for the authenticated admin's QBO account.
      */
     public function sync(Request $request): JsonResponse
     {
+        if (! $request->user()->isAdmin()) {
+            return response()->json(['message' => 'Only administrators can trigger a sync.'], 403);
+        }
+
         $token = $request->user()->quickBooksToken;
 
         if (! $token) {
@@ -127,24 +168,48 @@ class QuickBooksController extends Controller
     }
 
     /**
-     * Revoke the token and remove the QBO connection for the authenticated user.
+     * Revoke the QBO connection — admin only.
      */
     public function disconnect(Request $request): JsonResponse
     {
+        if (! $request->user()->isAdmin()) {
+            return response()->json(['message' => 'Only administrators can disconnect QuickBooks.'], 403);
+        }
+
         $this->quickBooks->disconnect($request->user()->id);
 
         return response()->json(['message' => 'QuickBooks account disconnected successfully.']);
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // Data Endpoints
+    // Data Endpoints — admin sees everything, users see their own records
     // ──────────────────────────────────────────────────────────────────────
 
     /**
-     * Return paginated list of synced Chart of Accounts.
+     * Resolve the QuickBooks realm token relevant to the current user.
+     *
+     * Admin  → their own connected token.
+     * User   → the company (admin) token.
+     */
+    private function resolveToken(Request $request): ?QuickBooksToken
+    {
+        $user = $request->user();
+
+        return $user->isAdmin()
+            ? $user->quickBooksToken
+            : QuickBooksToken::getCompanyToken();
+    }
+
+    /**
+     * Chart of Accounts — admin only.
+     * Accounts are internal business data; regular users should not see them.
      */
     public function accounts(Request $request): JsonResponse
     {
+        if (! $request->user()->isAdmin()) {
+            return response()->json(['message' => 'Access denied.'], 403);
+        }
+
         $token = $request->user()->quickBooksToken;
 
         if (! $token) {
@@ -161,19 +226,36 @@ class QuickBooksController extends Controller
     }
 
     /**
-     * Return paginated list of synced Invoices.
+     * Invoices.
+     *
+     * Admin  → all invoices for their realm (with optional filters).
+     * User   → only invoices where customer_email matches their account email,
+     *           pulled from the company's (admin's) realm.
      */
     public function invoices(Request $request): JsonResponse
     {
-        $token = $request->user()->quickBooksToken;
+        $request->validate([
+            'status'   => 'nullable|in:Open,Paid,Overdue',
+            'customer' => 'nullable|string|max:100',
+            'from'     => 'nullable|date_format:Y-m-d',
+            'to'       => 'nullable|date_format:Y-m-d|after_or_equal:from',
+            'per_page' => 'nullable|integer|min:1|max:100',
+            'page'     => 'nullable|integer|min:1',
+        ]);
+
+        $token = $this->resolveToken($request);
 
         if (! $token) {
-            return response()->json(['message' => 'QuickBooks account is not connected.'], 422);
+            return response()->json(['message' => 'QuickBooks is not connected.'], 422);
         }
 
+        $user    = $request->user();
+        $isAdmin = $user->isAdmin();
+
         $invoices = QuickBooksInvoice::where('realm_id', $token->realm_id)
+            ->when(! $isAdmin, fn ($q) => $q->where('customer_email', $user->email))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->status))
-            ->when($request->filled('customer'), fn ($q) => $q->where('customer_name', 'like', '%' . $request->customer . '%'))
+            ->when($isAdmin && $request->filled('customer'), fn ($q) => $q->where('customer_name', 'like', '%' . $request->customer . '%'))
             ->when($request->filled('from'), fn ($q) => $q->whereDate('txn_date', '>=', $request->from))
             ->when($request->filled('to'), fn ($q) => $q->whereDate('txn_date', '<=', $request->to))
             ->orderByDesc('txn_date')
@@ -183,19 +265,35 @@ class QuickBooksController extends Controller
     }
 
     /**
-     * Return paginated list of synced Transactions.
+     * Transactions (Purchases/Expenses).
+     *
+     * Admin  → all transactions for their realm.
+     * User   → transactions where entity_name matches their name.
      */
     public function transactions(Request $request): JsonResponse
     {
-        $token = $request->user()->quickBooksToken;
+        $request->validate([
+            'type'     => 'nullable|string|max:50',
+            'account'  => 'nullable|string|max:100',
+            'from'     => 'nullable|date_format:Y-m-d',
+            'to'       => 'nullable|date_format:Y-m-d|after_or_equal:from',
+            'per_page' => 'nullable|integer|min:1|max:100',
+            'page'     => 'nullable|integer|min:1',
+        ]);
+
+        $token = $this->resolveToken($request);
 
         if (! $token) {
-            return response()->json(['message' => 'QuickBooks account is not connected.'], 422);
+            return response()->json(['message' => 'QuickBooks is not connected.'], 422);
         }
 
+        $user    = $request->user();
+        $isAdmin = $user->isAdmin();
+
         $transactions = QuickBooksTransaction::where('realm_id', $token->realm_id)
+            ->when(! $isAdmin, fn ($q) => $q->where('entity_name', 'like', '%' . $user->name . '%'))
             ->when($request->filled('type'), fn ($q) => $q->where('txn_type', $request->type))
-            ->when($request->filled('account'), fn ($q) => $q->where('account_name', 'like', '%' . $request->account . '%'))
+            ->when($isAdmin && $request->filled('account'), fn ($q) => $q->where('account_name', 'like', '%' . $request->account . '%'))
             ->when($request->filled('from'), fn ($q) => $q->whereDate('txn_date', '>=', $request->from))
             ->when($request->filled('to'), fn ($q) => $q->whereDate('txn_date', '<=', $request->to))
             ->orderByDesc('txn_date')
@@ -205,40 +303,44 @@ class QuickBooksController extends Controller
     }
 
     /**
-     * Return high-level financial summary stats for the SPA dashboard.
+     * Financial summary.
+     *
+     * Admin  → full company summary (all customers).
+     * User   → personal summary (their own invoices only).
      */
     public function summary(Request $request): JsonResponse
     {
-        $token = $request->user()->quickBooksToken;
+        $token = $this->resolveToken($request);
 
         if (! $token) {
-            return response()->json(['message' => 'QuickBooks account is not connected.'], 422);
+            return response()->json(['message' => 'QuickBooks is not connected.'], 422);
         }
 
+        $user    = $request->user();
+        $isAdmin = $user->isAdmin();
         $realmId = $token->realm_id;
 
-        $totalRevenue = QuickBooksInvoice::where('realm_id', $realmId)
-            ->where('status', 'Paid')
-            ->sum('total_amount');
+        $invoiceQuery = QuickBooksInvoice::where('realm_id', $realmId);
+        $txnQuery     = QuickBooksTransaction::where('realm_id', $realmId);
 
-        $outstandingBalance = QuickBooksInvoice::where('realm_id', $realmId)
-            ->where('status', '!=', 'Paid')
-            ->sum('balance');
+        // Scope non-admin queries to their own records.
+        if (! $isAdmin) {
+            $invoiceQuery->where('customer_email', $user->email);
+            $txnQuery->where('entity_name', 'like', '%' . $user->name . '%');
+        }
 
-        $totalExpenses = QuickBooksTransaction::where('realm_id', $realmId)
-            ->sum('amount');
-
-        $overdueCount = QuickBooksInvoice::where('realm_id', $realmId)
-            ->where('status', 'Overdue')
-            ->count();
+        $totalRevenue       = (clone $invoiceQuery)->where('status', 'Paid')->sum('total_amount');
+        $outstandingBalance = (clone $invoiceQuery)->whereIn('status', ['Open', 'Overdue'])->sum('balance');
+        $totalExpenses      = (clone $txnQuery)->sum('amount');
+        $overdueCount       = (clone $invoiceQuery)->where('status', 'Overdue')->count();
 
         return response()->json([
             'total_revenue'       => (float) $totalRevenue,
             'outstanding_balance' => (float) $outstandingBalance,
             'total_expenses'      => (float) $totalExpenses,
             'overdue_invoices'    => $overdueCount,
-            'last_synced_at'      => QuickBooksInvoice::where('realm_id', $realmId)
-                ->max('synced_at'),
+            'last_synced_at'      => QuickBooksInvoice::where('realm_id', $realmId)->max('synced_at'),
+            'is_personal'         => ! $isAdmin,
         ]);
     }
 }

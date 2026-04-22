@@ -5,10 +5,13 @@ import axios from 'axios';
 
 export interface QBStatus {
     connected: boolean;
+    role?: 'admin' | 'user';
     realm_id?: string;
     token_expires_at?: string;
     refresh_token_expires_at?: string;
     access_token_expired?: boolean;
+    is_company_account?: boolean;
+    last_synced_at?: string | null;
 }
 
 export interface QBSummary {

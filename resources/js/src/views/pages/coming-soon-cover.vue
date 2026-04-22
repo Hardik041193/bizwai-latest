@@ -32,7 +32,7 @@
                 <div class="relative w-full px-4 pb-16 pt-6 sm:px-6 lg:max-w-[667px]">
                     <div class="mx-auto mt-5 w-full max-w-[550px] lg:mt-16">
                         <router-link to="/" class="mb-8 block lg:hidden">
-                            <img src="/assets/images/logo.svg" alt="Logo" class="mx-auto w-10" />
+                            <img src="/assets/images/bizwai.png" alt="Bizwai" class="mx-auto h-8 w-auto object-contain" />
                         </router-link>
                         <div class="mb-12">
                             <h1 class="text-3xl font-extrabold uppercase !leading-snug text-primary md:text-4xl">Coming Soon</h1>
@@ -185,7 +185,7 @@
                             </ul>
                         </div>
                     </div>
-                    <p class="absolute bottom-6 w-full text-center dark:text-white">© {{ new Date().getFullYear() }}.VRISTO All Rights Reserved.</p>
+                    <p class="absolute bottom-6 w-full text-center dark:text-white">© {{ new Date().getFullYear() }}.Bizwai. All Rights Reserved.</p>
                 </div>
             </div>
         </div>

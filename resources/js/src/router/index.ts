@@ -17,12 +17,12 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true, requiresAdmin: true },
     },
 
-    // ── QuickBooks ──
+    // ── QuickBooks (admin management) ──
     {
         path: '/quickbooks/connect',
         name: 'quickbooks-connect',
         component: () => import(/* webpackChunkName: "qb-connect" */ '../views/quickbooks/connect.vue'),
-        meta: { requiresAuth: true },
+        meta: { requiresAuth: true, requiresAdmin: true },
     },
     {
         path: '/quickbooks/connected',
@@ -40,6 +40,13 @@ const routes: RouteRecordRaw[] = [
         path: '/quickbooks/dashboard',
         name: 'quickbooks-dashboard',
         component: () => import(/* webpackChunkName: "qb-dashboard" */ '../views/quickbooks/dashboard.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true },
+    },
+    // ── QuickBooks (user portal — My Invoices) ──
+    {
+        path: '/quickbooks/portal',
+        name: 'quickbooks-portal',
+        component: () => import(/* webpackChunkName: "qb-portal" */ '../views/quickbooks/portal.vue'),
         meta: { requiresAuth: true },
     },
     {

@@ -4,8 +4,11 @@
             <div class="bg-white dark:bg-[#0e1726] h-full">
                 <div class="flex justify-between items-center px-4 py-3">
                     <router-link to="/" class="main-logo flex items-center shrink-0">
-                        <img class="w-8 ml-[5px] flex-none" src="/assets/images/logo.svg" alt="" />
-                        <span class="text-2xl ltr:ml-1.5 rtl:mr-1.5 font-semibold align-middle lg:inline dark:text-white-light">VRISTO</span>
+                        <img
+                            class="h-9 w-auto ml-[5px] flex-none object-contain"
+                            src="/assets/images/bizwai.png"
+                            alt="Bizwai"
+                        />
                     </router-link>
                     <a
                         href="javascript:;"
@@ -33,6 +36,12 @@
                     class="h-[calc(100vh-80px)] relative"
                 >
                     <ul class="relative font-semibold space-y-0.5 p-4 py-0">
+
+                        <!-- ═══════════════════════════════════════════════════════════════
+                             SECTION: Dashboard + Apps — hidden for Bizwai (QuickBooks-only)
+                             Uncomment if you need to restore these menu items.
+                        ════════════════════════════════════════════════════════════════ -->
+                        <!--
                         <li class="menu nav-item">
                             <button
                                 type="button"
@@ -404,6 +413,9 @@
                             </ul>
                         </li>
 
+                        -->
+                        <!-- ═══ END: Dashboard + Apps hidden section ═══ -->
+
                         <!-- ── QuickBooks ── -->
                         <h2 class="py-3 px-7 flex items-center uppercase font-extrabold bg-white-light/30 dark:bg-dark dark:bg-opacity-[0.08] -mx-4 mb-1">
                             <svg class="w-4 h-5 flex-none hidden" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
@@ -411,30 +423,56 @@
                             </svg>
                             <span>QuickBooks</span>
                         </h2>
-                        <li class="nav-item">
-                            <router-link to="/quickbooks/dashboard" class="group" @click="toggleMobileMenu">
-                                <div class="flex items-center">
-                                    <svg class="group-hover:!text-primary shrink-0" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                        <path d="M6 2h12a2 2 0 012 2v16a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z" stroke="currentColor" stroke-width="1.5"/>
-                                        <path opacity="0.5" d="M9 7h6M9 11h6M9 15h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                                    </svg>
-                                    <span class="ltr:pl-3 rtl:pr-3 text-black dark:text-[#506690] dark:group-hover:text-white-dark">QB Dashboard</span>
-                                    <span v-if="qbConnected" class="ltr:ml-auto rtl:mr-auto badge badge-outline-success text-xs px-1 py-0">Live</span>
-                                </div>
-                            </router-link>
-                        </li>
-                        <li class="nav-item">
-                            <router-link to="/quickbooks/connect" class="group" @click="toggleMobileMenu">
-                                <div class="flex items-center">
-                                    <svg class="group-hover:!text-primary shrink-0" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                        <path opacity="0.5" d="M3 12a9 9 0 1118 0A9 9 0 013 12z" fill="currentColor"/>
-                                        <path d="M12 8v4l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                                    </svg>
-                                    <span class="ltr:pl-3 rtl:pr-3 text-black dark:text-[#506690] dark:group-hover:text-white-dark">Connect QBO</span>
-                                </div>
-                            </router-link>
-                        </li>
 
+                        <!-- Admin: full QB dashboard + connect button -->
+                        <template v-if="authStore.isAdmin">
+                            <li class="nav-item">
+                                <router-link to="/quickbooks/dashboard" class="group" @click="toggleMobileMenu">
+                                    <div class="flex items-center">
+                                        <svg class="group-hover:!text-primary shrink-0" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M6 2h12a2 2 0 012 2v16a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z" stroke="currentColor" stroke-width="1.5"/>
+                                            <path opacity="0.5" d="M9 7h6M9 11h6M9 15h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                                        </svg>
+                                        <span class="ltr:pl-3 rtl:pr-3 text-black dark:text-[#506690] dark:group-hover:text-white-dark">QB Dashboard</span>
+                                        <span v-if="qbConnected" class="ltr:ml-auto rtl:mr-auto badge badge-outline-success text-xs px-1 py-0">Live</span>
+                                    </div>
+                                </router-link>
+                            </li>
+                            <li class="nav-item">
+                                <router-link to="/quickbooks/connect" class="group" @click="toggleMobileMenu">
+                                    <div class="flex items-center">
+                                        <svg class="group-hover:!text-primary shrink-0" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <path opacity="0.5" d="M3 12a9 9 0 1118 0A9 9 0 013 12z" fill="currentColor"/>
+                                            <path d="M12 8v4l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                                        </svg>
+                                        <span class="ltr:pl-3 rtl:pr-3 text-black dark:text-[#506690] dark:group-hover:text-white-dark">Connect QBO</span>
+                                    </div>
+                                </router-link>
+                            </li>
+                        </template>
+
+                        <!-- Regular user: personal invoice portal -->
+                        <template v-else>
+                            <li class="nav-item">
+                                <router-link to="/quickbooks/portal" class="group" @click="toggleMobileMenu">
+                                    <div class="flex items-center">
+                                        <svg class="group-hover:!text-primary shrink-0" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke="currentColor" stroke-width="1.5"/>
+                                            <path opacity="0.5" d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                                        </svg>
+                                        <span class="ltr:pl-3 rtl:pr-3 text-black dark:text-[#506690] dark:group-hover:text-white-dark">My Invoices</span>
+                                        <span v-if="qbConnected" class="ltr:ml-auto rtl:mr-auto badge badge-outline-success text-xs px-1 py-0">Live</span>
+                                    </div>
+                                </router-link>
+                            </li>
+                        </template>
+
+                        <!-- ═══════════════════════════════════════════════════════════════
+                             SECTION: UI Components, Tables, Forms, Users, Auth, Supports
+                             — hidden for Bizwai (QuickBooks-only sidebar)
+                             Uncomment if you need to restore these menu items.
+                        ════════════════════════════════════════════════════════════════ -->
+                        <!--
                         <h2 class="py-3 px-7 flex items-center uppercase font-extrabold bg-white-light/30 dark:bg-dark dark:bg-opacity-[0.08] -mx-4 mb-1">
                             <svg
                                 class="w-4 h-5 flex-none hidden"
@@ -1301,10 +1339,13 @@
 
                                     <span class="ltr:pl-3 rtl:pr-3 text-black dark:text-[#506690] dark:group-hover:text-white-dark">{{
                                         $t('documentation')
-                                    }}</span>
+                                    }}                                    </span>
                                 </div>
                             </a>
                         </li>
+                        -->
+                        <!-- ═══ END: UI/Tables/Auth/Supports hidden section ═══ -->
+
                     </ul>
                 </perfect-scrollbar>
             </div>
@@ -1316,9 +1357,11 @@
     import { ref, computed, onMounted } from 'vue';
 
     import { useAppStore } from '@/stores/index';
+    import { useAuthStore } from '@/stores/auth';
     import { useQuickBooksStore } from '@/stores/quickbooks';
     import VueCollapsible from 'vue-height-collapsible/vue3';
     const store = useAppStore();
+    const authStore = useAuthStore();
     const qbStore = useQuickBooksStore();
     const activeDropdown: any = ref('');
     const subActive: any = ref('');

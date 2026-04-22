@@ -136,7 +136,7 @@
             <!-- ── Invoices Tab ── -->
             <div v-else-if="activeTab === 'invoices'">
                 <div class="flex flex-wrap gap-3 mb-4">
-                    <select v-model="invoiceFilters.status" @change="loadInvoices" class="form-select w-36 text-sm">
+                    <select v-model="invoiceFilters.status" @change="() => loadInvoices(1)" class="form-select w-36 text-sm">
                         <option value="">All Status</option>
                         <option value="Open">Open</option>
                         <option value="Paid">Paid</option>
@@ -233,7 +233,7 @@
             <!-- ── Accounts Tab ── -->
             <div v-else-if="activeTab === 'accounts'">
                 <div class="flex flex-wrap gap-3 mb-4">
-                    <select v-model="accountFilters.type" @change="loadAccounts" class="form-select w-44 text-sm">
+                    <select v-model="accountFilters.type" @change="() => loadAccounts(1)" class="form-select w-44 text-sm">
                         <option value="">All Types</option>
                         <option value="Bank">Bank</option>
                         <option value="Accounts Receivable">Accounts Receivable</option>

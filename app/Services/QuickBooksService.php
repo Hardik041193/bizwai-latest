@@ -121,44 +121,62 @@ class QuickBooksService
             return $token;
         }
 
-        if (! $token->isAccessTokenExpired()) {
-            return $token;
-        }
+        // Re-read the token with a pessimistic lock to prevent concurrent refreshes.
+        // If two requests hit this method simultaneously, only one will actually
+        // call the QBO API; the other will wait and then find the token already fresh.
+        return \DB::transaction(function () use ($token) {
+            /** @var QuickBooksToken $fresh */
+            $fresh = QuickBooksToken::where('id', $token->id)->lockForUpdate()->first();
 
-        if ($token->isRefreshTokenExpired()) {
-            throw new RuntimeException(
-                'QuickBooks refresh token has expired. The user must reconnect their account.'
-            );
-        }
+            if (! $fresh) {
+                throw new RuntimeException('QuickBooks token no longer exists.');
+            }
 
-        $dataService = DataService::Configure([
-            'auth_mode'       => 'oauth2',
-            'ClientID'        => config('quickbooks.client_id'),
-            'ClientSecret'    => config('quickbooks.client_secret'),
-            'RedirectURI'     => config('quickbooks.redirect_uri'),
-            'scope'           => config('quickbooks.scope'),
-            'baseUrl'         => config('quickbooks.base_url'),
-            'accessTokenKey'  => $token->access_token,
-            'refreshTokenKey' => $token->refresh_token,
-            'QBORealmID'      => $token->realm_id,
-        ]);
+            // After acquiring the lock the token may already have been refreshed
+            // by another process — re-check expiry on the locked copy.
+            if (! $fresh->isAccessTokenExpired()) {
+                return $fresh;
+            }
 
-        /** @var \QuickBooksOnline\API\Core\OAuth\OAuth2\OAuth2LoginHelper $helper */
-        $helper   = $dataService->getOAuth2LoginHelper();
-        $newToken = $helper->refreshToken();
+            if ($fresh->isRefreshTokenExpired()) {
+                throw new RuntimeException(
+                    'QuickBooks refresh token has expired. The user must reconnect their account.'
+                );
+            }
 
-        $token->update([
-            'access_token'             => $newToken->getAccessToken(),
-            'refresh_token'            => $newToken->getRefreshToken(),
-            'token_expires_at'         => now()->addSeconds($newToken->getAccessTokenExpiresAt()),
-            'refresh_token_expires_at' => now()->addSeconds($newToken->getRefreshTokenExpiresAt()),
-        ]);
+            $dataService = DataService::Configure([
+                'auth_mode'       => 'oauth2',
+                'ClientID'        => config('quickbooks.client_id'),
+                'ClientSecret'    => config('quickbooks.client_secret'),
+                'RedirectURI'     => config('quickbooks.redirect_uri'),
+                'scope'           => config('quickbooks.scope'),
+                'baseUrl'         => config('quickbooks.base_url'),
+                'accessTokenKey'  => $fresh->access_token,
+                'refreshTokenKey' => $fresh->refresh_token,
+                'QBORealmID'      => $fresh->realm_id,
+            ]);
 
-        return $token->fresh();
+            /** @var \QuickBooksOnline\API\Core\OAuth\OAuth2\OAuth2LoginHelper $helper */
+            $helper   = $dataService->getOAuth2LoginHelper();
+            $newToken = $helper->refreshToken();
+
+            $accessExpiresIn  = (int) ($newToken->getAccessTokenExpiresAt()  ?: 3600);
+            $refreshExpiresIn = (int) ($newToken->getRefreshTokenExpiresAt() ?: 8726400);
+
+            $fresh->update([
+                'access_token'             => $newToken->getAccessToken(),
+                'refresh_token'            => $newToken->getRefreshToken(),
+                'token_expires_at'         => now()->addSeconds($accessExpiresIn),
+                'refresh_token_expires_at' => now()->addSeconds($refreshExpiresIn),
+            ]);
+
+            return $fresh->fresh();
+        });
     }
 
     /**
-     * Revoke the access token and remove it from the database.
+     * Revoke the access token, remove it from the database, and purge all
+     * synced data for that realm so no stale records remain after disconnect.
      */
     public function disconnect(int $userId): void
     {
@@ -167,6 +185,8 @@ class QuickBooksService
         if (! $token) {
             return;
         }
+
+        $realmId = $token->realm_id;
 
         try {
             $dataService = $this->getDataService($token);
@@ -180,7 +200,18 @@ class QuickBooksService
             ]);
         }
 
+        // Delete token first, then purge all synced data for this realm.
+        // This prevents a race where another request could still use the realm_id.
         $token->delete();
+
+        QuickBooksAccount::where('realm_id', $realmId)->delete();
+        QuickBooksInvoice::where('realm_id', $realmId)->delete();
+        QuickBooksTransaction::where('realm_id', $realmId)->delete();
+
+        Log::info('QuickBooks: synced data purged after disconnect.', [
+            'user_id'  => $userId,
+            'realm_id' => $realmId,
+        ]);
     }
 
     // ──────────────────────────────────────────────────────────────────────────

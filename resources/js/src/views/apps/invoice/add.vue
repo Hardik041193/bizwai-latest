@@ -5,11 +5,11 @@
                 <div class="flex justify-between flex-wrap px-4">
                     <div class="mb-6 lg:w-1/2 w-full">
                         <div class="flex items-center text-black dark:text-white shrink-0">
-                            <img src="/assets/images/logo.svg" alt="" class="w-14" />
+                            <img src="/assets/images/bizwai.png" alt="" class="h-10 w-auto object-contain" />
                         </div>
                         <div class="space-y-1 mt-6 text-gray-500 dark:text-gray-400">
                             <div>13 Tetrick Road, Cypress Gardens, Florida, 33884, US</div>
-                            <div>vristo@gmail.com</div>
+                            <div>info@bizwai.com</div>
                             <div>+1 (070) 123-4567</div>
                         </div>
                     </div>

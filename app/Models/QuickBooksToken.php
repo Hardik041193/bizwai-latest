@@ -35,6 +35,17 @@ class QuickBooksToken extends Model
         return $this->belongsTo(User::class);
     }
 
+    /**
+     * Return the single "company" QuickBooks token — owned by any admin user.
+     * Regular (non-admin) users see data through this shared company connection.
+     */
+    public static function getCompanyToken(): ?self
+    {
+        return self::whereHas('user', fn ($q) => $q->where('role', 'admin'))
+            ->latest()
+            ->first();
+    }
+
     public function isAccessTokenExpired(): bool
     {
         if (is_null($this->token_expires_at)) {
