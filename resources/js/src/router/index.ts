@@ -16,6 +16,39 @@ const routes: RouteRecordRaw[] = [
         component: () => import(/* webpackChunkName: "admin-dashboard" */ '../views/admin/dashboard.vue'),
         meta: { requiresAuth: true, requiresAdmin: true },
     },
+
+    // ── QuickBooks (admin management) ──
+    {
+        path: '/quickbooks/connect',
+        name: 'quickbooks-connect',
+        component: () => import(/* webpackChunkName: "qb-connect" */ '../views/quickbooks/connect.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true },
+    },
+    {
+        path: '/quickbooks/connected',
+        name: 'quickbooks-connected',
+        component: () => import(/* webpackChunkName: "qb-connected" */ '../views/quickbooks/connected.vue'),
+        meta: { requiresAuth: true },
+    },
+    {
+        path: '/quickbooks/error',
+        name: 'quickbooks-error',
+        component: () => import(/* webpackChunkName: "qb-error" */ '../views/quickbooks/error.vue'),
+        meta: { requiresAuth: true },
+    },
+    {
+        path: '/quickbooks/dashboard',
+        name: 'quickbooks-dashboard',
+        component: () => import(/* webpackChunkName: "qb-dashboard" */ '../views/quickbooks/dashboard.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true },
+    },
+    // ── QuickBooks (user portal — My Invoices) ──
+    {
+        path: '/quickbooks/portal',
+        name: 'quickbooks-portal',
+        component: () => import(/* webpackChunkName: "qb-portal" */ '../views/quickbooks/portal.vue'),
+        meta: { requiresAuth: true },
+    },
     {
         path: '/analytics',
         name: 'analytics',

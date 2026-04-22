@@ -1,7 +1,9 @@
 <?php
 
+use App\Console\Commands\SyncQuickBooksCommand;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Schedule;
 
 /*
 |--------------------------------------------------------------------------
@@ -17,3 +19,16 @@ use Illuminate\Support\Facades\Artisan;
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
+
+/*
+|--------------------------------------------------------------------------
+| Scheduled Tasks
+|--------------------------------------------------------------------------
+*/
+
+Schedule::command(SyncQuickBooksCommand::class)
+    ->daily()
+    ->at('02:00')
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/quickbooks-sync.log'));

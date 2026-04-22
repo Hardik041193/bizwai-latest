@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\QuickBooksController;
 use Illuminate\Support\Facades\Route;
 
 // ── Public auth ──
@@ -27,4 +28,21 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/email/resend', [AuthController::class, 'resendVerification'])
         ->middleware('throttle:6,1');
+
+    // ── QuickBooks ──
+    Route::prefix('quickbooks')->name('quickbooks.')->group(function () {
+        // OAuth / management (admin-only enforcement is inside the controller)
+        Route::get('/connect',     [QuickBooksController::class, 'connect'])->name('connect');
+        Route::post('/disconnect', [QuickBooksController::class, 'disconnect'])->name('disconnect')->middleware('throttle:3,1');
+        Route::post('/sync',       [QuickBooksController::class, 'sync'])->name('sync')->middleware('throttle:5,1');
+
+        // Read endpoints — 60 req/min per user
+        Route::middleware('throttle:60,1')->group(function () {
+            Route::get('/status',       [QuickBooksController::class, 'status'])->name('status');
+            Route::get('/summary',      [QuickBooksController::class, 'summary'])->name('summary');
+            Route::get('/accounts',     [QuickBooksController::class, 'accounts'])->name('accounts');
+            Route::get('/invoices',     [QuickBooksController::class, 'invoices'])->name('invoices');
+            Route::get('/transactions', [QuickBooksController::class, 'transactions'])->name('transactions');
+        });
+    });
 });

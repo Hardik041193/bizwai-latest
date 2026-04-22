@@ -12,5 +12,5 @@ export const usePageTitle = (pageTitle: any) =>
     );
 
 export const useMeta = (data: any) => {
-    return useHead({ ...data, title: `${data.title} | VRISTO - Multipurpose Tailwind Dashboard Template` });
+    return useHead({ ...data, title: `${data.title} | Bizwai` });
 };
