@@ -292,13 +292,15 @@
 <script lang="ts" setup>
 import { ref, reactive, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { useMeta } from '@/composables/use-meta';
+import { useMeta }           from '@/composables/use-meta';
+import { useToast }          from '@/composables/use-toast';
 import { useQuickBooksStore } from '@/stores/quickbooks';
 
 useMeta({ title: 'QuickBooks Dashboard' });
 
 const router   = useRouter();
 const qbStore  = useQuickBooksStore();
+const { showToast, confirmDialog } = useToast();
 const activeTab = ref<'invoices' | 'transactions' | 'accounts'>('invoices');
 
 const tabs = [
@@ -365,21 +367,32 @@ watch(activeTab, (tab) => {
 async function syncData() {
     try {
         await qbStore.triggerSync();
-        // Reload after sync (give it a second for sync jobs to process)
+        showToast('Sync started — data will refresh shortly.', 'success');
         setTimeout(async () => {
             await qbStore.fetchSummary();
             await loadInvoices();
         }, 1500);
-    } catch (_) {}
+    } catch (_) {
+        showToast(qbStore.error ?? 'Failed to trigger sync.', 'error');
+    }
 }
 
 // ── Disconnect ────────────────────────────────────────────────────────────
 async function confirmDisconnect() {
-    if (!confirm('Are you sure you want to disconnect QuickBooks? Your synced data will remain but no new syncs will occur.')) return;
+    const ok = await confirmDialog({
+        title:       'Disconnect QuickBooks?',
+        text:        'Synced data will remain but no new syncs will occur. You can reconnect at any time.',
+        confirmText: 'Yes, Disconnect',
+        cancelText:  'Cancel',
+    });
+    if (!ok) return;
     try {
         await qbStore.disconnect();
+        showToast('QuickBooks disconnected successfully.', 'success');
         router.push('/quickbooks/connect');
-    } catch (_) {}
+    } catch (_) {
+        showToast(qbStore.error ?? 'Failed to disconnect.', 'error');
+    }
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────

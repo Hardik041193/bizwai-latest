@@ -1,7 +1,9 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\QuickBooksController;
+use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
 // ── Public auth ──
@@ -26,6 +28,23 @@ Route::get('/email/verify/{id}/{hash}', [AuthController::class, 'verifyEmail'])
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/user', [AuthController::class, 'user']);
     Route::post('/logout', [AuthController::class, 'logout']);
+
+    // ── Admin: Users CRUD ──
+    Route::prefix('admin/users')->name('admin.users.')->middleware('throttle:60,1')->group(function () {
+        Route::get('/',          [UserController::class, 'index'])->name('index');
+        Route::post('/',         [UserController::class, 'store'])->name('store');
+        Route::get('/{user}',    [UserController::class, 'show'])->name('show');
+        Route::put('/{user}',    [UserController::class, 'update'])->name('update');
+        Route::delete('/{user}', [UserController::class, 'destroy'])->name('destroy');
+    });
+
+    // ── Profile ──
+    Route::prefix('profile')->name('profile.')->group(function () {
+        Route::get('/',        [ProfileController::class, 'show'])->name('show');
+        Route::put('/',        [ProfileController::class, 'update'])->name('update');
+        Route::put('/password',[ProfileController::class, 'updatePassword'])->name('password');
+        Route::post('/avatar', [ProfileController::class, 'updateAvatar'])->name('avatar');
+    });
     Route::post('/email/resend', [AuthController::class, 'resendVerification'])
         ->middleware('throttle:6,1');
 

@@ -16,6 +16,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import(/* webpackChunkName: "admin-dashboard" */ '../views/admin/dashboard.vue'),
         meta: { requiresAuth: true, requiresAdmin: true },
     },
+    {
+        path: '/admin/users',
+        name: 'admin-users',
+        component: () => import(/* webpackChunkName: "admin-users" */ '../views/admin/users/index.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true },
+    },
 
     // ── QuickBooks (admin management) ──
     {
@@ -476,6 +482,7 @@ const routes: RouteRecordRaw[] = [
         path: '/users/profile',
         name: 'profile',
         component: () => import(/* webpackChunkName: "users-profile" */ '../views/users/profile.vue'),
+        meta: { requiresAuth: true },
     },
     {
         path: '/users/user-account-settings',
