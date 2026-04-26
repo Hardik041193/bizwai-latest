@@ -476,6 +476,7 @@ const routes: RouteRecordRaw[] = [
         path: '/users/profile',
         name: 'profile',
         component: () => import(/* webpackChunkName: "users-profile" */ '../views/users/profile.vue'),
+        meta: { requiresAuth: true },
     },
     {
         path: '/users/user-account-settings',

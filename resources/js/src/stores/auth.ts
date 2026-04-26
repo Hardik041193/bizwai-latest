@@ -6,6 +6,11 @@ export interface AuthUser {
     name: string;
     email: string;
     role: 'user' | 'admin';
+    phone?: string | null;
+    job_title?: string | null;
+    address?: string | null;
+    bio?: string | null;
+    avatar_url?: string | null;
     email_verified_at: string | null;
 }
 
