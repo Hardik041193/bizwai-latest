@@ -155,11 +155,11 @@ class AuthController extends Controller
     }
 
     /**
-     * Get authenticated user.
+     * Get authenticated user (includes computed fields like avatar_url).
      */
     public function user(Request $request): JsonResponse
     {
-        return response()->json($request->user());
+        return response()->json($request->user()->profileResource());
     }
 
     /**

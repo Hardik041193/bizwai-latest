@@ -46,7 +46,6 @@
                     <span>{{ loading ? 'Redirecting to QuickBooks…' : 'Connect QuickBooks Account' }}</span>
                 </button>
 
-                <p v-if="error" class="mt-4 text-danger text-sm">{{ error }}</p>
 
                 <p class="mt-6 text-xs text-white-dark/50">
                     You will be redirected to Intuit to authorize access. BizWai never stores your QuickBooks password.
@@ -58,14 +57,15 @@
 
 <script lang="ts" setup>
 import { ref } from 'vue';
-import { useMeta } from '@/composables/use-meta';
+import { useMeta }           from '@/composables/use-meta';
+import { useToast }          from '@/composables/use-toast';
 import { useQuickBooksStore } from '@/stores/quickbooks';
 
 useMeta({ title: 'Connect QuickBooks' });
 
 const qbStore = useQuickBooksStore();
+const { showToast } = useToast();
 const loading = ref(false);
-const error = ref('');
 
 const benefits = [
     'Auto-sync invoices, expenses and accounts daily',
@@ -76,12 +76,11 @@ const benefits = [
 
 async function connectQBO() {
     loading.value = true;
-    error.value = '';
     try {
         const url = await qbStore.getConnectUrl();
         window.location.href = url;
     } catch (err: any) {
-        error.value = err.response?.data?.message ?? 'Failed to initiate QuickBooks connection.';
+        showToast(err.response?.data?.message ?? 'Failed to initiate QuickBooks connection.', 'error');
         loading.value = false;
     }
 }

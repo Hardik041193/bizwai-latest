@@ -97,8 +97,10 @@
                     <span class="animate-spin border-4 border-primary border-l-transparent rounded-full w-10 h-10 inline-block"></span>
                 </div>
 
-                <!-- Error -->
-                <div v-else-if="error" class="text-center py-8 text-danger">{{ error }}</div>
+                <!-- Error state (toast handles messaging; show empty state instead) -->
+                <div v-else-if="qbStore.error && !invoices?.data?.length" class="text-center py-8 text-danger">
+                    Unable to load invoices. Please try again.
+                </div>
 
                 <!-- No data -->
                 <div v-else-if="!invoices?.data?.length" class="text-center py-12">
@@ -160,21 +162,25 @@
 <script lang="ts" setup>
 import { ref, onMounted } from 'vue';
 import { useQuickBooksStore, type Paginated, type QBInvoice } from '@/stores/quickbooks';
+import { useToast } from '@/composables/use-toast';
 
 const qbStore  = useQuickBooksStore();
+const { showToast } = useToast();
 const loading  = ref(false);
-const error    = ref<string | null>(null);
 const invoices = ref<Paginated<QBInvoice> | null>(null);
 const statusFilter = ref('');
 
 async function loadInvoices(page = 1) {
     loading.value = true;
-    error.value   = null;
+    qbStore.error = null;
     try {
         await qbStore.fetchInvoices({ status: statusFilter.value || undefined, page });
         invoices.value = qbStore.invoices;
+        if (qbStore.error) {
+            showToast(qbStore.error, 'error');
+        }
     } catch {
-        error.value = 'Failed to load invoices.';
+        showToast('Failed to load invoices.', 'error');
     } finally {
         loading.value = false;
     }

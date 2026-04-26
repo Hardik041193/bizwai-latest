@@ -129,20 +129,13 @@
                         >{{ tab.label }}</button>
                     </div>
 
-                    <!-- Global alert (success / error) -->
-                    <div v-if="profileStore.successMessage"
-                        class="alert alert-success flex items-center gap-3 mb-5 p-3.5 rounded">
-                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
-                        <span>{{ profileStore.successMessage }}</span>
-                    </div>
-                    <div v-if="profileStore.error"
+                    <!-- Validation errors summary (field-level errors remain inline) -->
+                    <div v-if="profileStore.error && Object.keys(profileStore.errors).length"
                         class="alert alert-danger flex items-center gap-3 mb-5 p-3.5 rounded">
                         <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                         </svg>
-                        <span>{{ profileStore.error }}</span>
+                        <span>Please fix the errors below before saving.</span>
                     </div>
 
                     <!-- ── Tab: Profile Info ── -->
@@ -370,9 +363,11 @@
 
 <script lang="ts" setup>
 import { ref, reactive, computed, watch, onMounted } from 'vue';
-import { useProfileStore }  from '@/stores/profile';
+import { useProfileStore } from '@/stores/profile';
+import { useToast }        from '@/composables/use-toast';
 
 const profileStore = useProfileStore();
+const { showToast } = useToast();
 
 const activeTab = ref<'info' | 'password'>('info');
 
@@ -406,7 +401,12 @@ watch(() => profileStore.profile, syncFormFromStore, { immediate: true });
 
 async function submitProfileUpdate() {
     profileStore.clearMessages();
-    await profileStore.updateProfile({ ...profileForm });
+    const ok = await profileStore.updateProfile({ ...profileForm });
+    if (ok) {
+        showToast(profileStore.successMessage ?? 'Profile updated successfully.', 'success');
+    } else if (profileStore.error && !Object.keys(profileStore.errors).length) {
+        showToast(profileStore.error, 'error');
+    }
 }
 
 // ── Password form ─────────────────────────────────────────────────────────────
@@ -471,6 +471,9 @@ async function submitPasswordUpdate() {
         passwordForm.current_password      = '';
         passwordForm.password              = '';
         passwordForm.password_confirmation = '';
+        showToast('Password updated successfully.', 'success');
+    } else if (profileStore.error && !Object.keys(profileStore.errors).length) {
+        showToast(profileStore.error, 'error');
     }
 }
 
@@ -485,7 +488,12 @@ async function onAvatarSelect(event: Event) {
     const file = (event.target as HTMLInputElement).files?.[0];
     if (!file) return;
     profileStore.clearMessages();
-    await profileStore.uploadAvatar(file);
+    const ok = await profileStore.uploadAvatar(file);
+    if (ok) {
+        showToast('Avatar updated successfully.', 'success');
+    } else {
+        showToast(profileStore.error ?? 'Failed to upload avatar.', 'error');
+    }
     (event.target as HTMLInputElement).value = '';
 }
 

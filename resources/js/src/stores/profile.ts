@@ -81,8 +81,9 @@ export const useProfileStore = defineStore('profile', {
                 // Keep auth store in sync
                 const authStore = useAuthStore();
                 if (authStore.user) {
-                    authStore.user.name  = data.user.name;
-                    authStore.user.email = data.user.email;
+                    authStore.user.name       = data.user.name;
+                    authStore.user.email      = data.user.email;
+                    authStore.user.avatar_url = data.user.avatar_url;
                 }
 
                 return true;
@@ -133,6 +134,11 @@ export const useProfileStore = defineStore('profile', {
                 });
                 if (this.profile) {
                     this.profile.avatar_url = data.avatar_url;
+                }
+                // Keep auth store in sync so header icon updates immediately
+                const authStore = useAuthStore();
+                if (authStore.user) {
+                    authStore.user.avatar_url = data.avatar_url;
                 }
                 this.successMessage = data.message;
                 return true;
