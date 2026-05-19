@@ -11,10 +11,11 @@
             <img src="/assets/images/auth/coming-soon-object2.png" alt="image" class="absolute left-24 top-0 h-40 md:left-[30%]" />
             <img src="/assets/images/auth/coming-soon-object3.png" alt="image" class="absolute right-0 top-0 h-[300px]" />
             <img src="/assets/images/auth/polygon-object.svg" alt="image" class="absolute bottom-0 end-[28%]" />
+
             <div
                 class="relative w-full max-w-[870px] rounded-md bg-[linear-gradient(45deg,#fff9f9_0%,rgba(255,255,255,0)_25%,rgba(255,255,255,0)_75%,_#fff9f9_100%)] p-2 dark:bg-[linear-gradient(52.22deg,#0E1726_0%,rgba(14,23,38,0)_18.66%,rgba(14,23,38,0)_51.04%,rgba(14,23,38,0)_80.07%,#0E1726_100%)]"
             >
-                <div class="relative flex flex-col justify-center rounded-md bg-white/60 backdrop-blur-lg dark:bg-black/50 px-6 lg:min-h-[758px] py-20">
+                <div class="relative flex flex-col justify-center rounded-md bg-white/60 px-6 py-20 backdrop-blur-lg dark:bg-black/50 lg:min-h-[758px]">
                     <div class="absolute top-6 end-6">
                         <div class="dropdown">
                             <Popper :placement="store.rtlClass === 'rtl' ? 'bottom-start' : 'bottom-end'" offsetDistance="8">
@@ -22,18 +23,8 @@
                                     type="button"
                                     class="flex items-center gap-2.5 rounded-lg border border-white-dark/30 bg-white px-2 py-1.5 text-white-dark hover:border-primary hover:text-primary dark:bg-black"
                                 >
-                                    <div>
-                                        <img :src="currentFlag" alt="image" class="h-5 w-5 rounded-full object-cover" />
-                                    </div>
+                                    <img :src="currentFlag" alt="image" class="h-5 w-5 rounded-full object-cover" />
                                     <div class="text-base font-bold uppercase">{{ store.locale }}</div>
-                                    <span class="shrink-0">
-                                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                            <path
-                                                d="M6.99989 9.79988C6.59156 9.79988 6.18322 9.64238 5.87406 9.33321L2.07072 5.52988C1.90156 5.36071 1.90156 5.08071 2.07072 4.91154C2.23989 4.74238 2.51989 4.74238 2.68906 4.91154L6.49239 8.71488C6.77239 8.99488 7.22739 8.99488 7.50739 8.71488L11.3107 4.91154C11.4799 4.74238 11.7599 4.74238 11.9291 4.91154C12.0982 5.08071 12.0982 5.36071 11.9291 5.52988L8.12572 9.33321C7.81656 9.64238 7.40822 9.79988 6.99989 9.79988Z"
-                                                fill="currentColor"
-                                            />
-                                        </svg>
-                                    </span>
                                 </button>
                                 <template #content="{ close }">
                                     <ul class="!px-2 text-dark dark:text-white-dark grid grid-cols-2 gap-2 font-semibold dark:text-white-light/90 w-[280px]">
@@ -45,11 +36,7 @@
                                                     :class="{ 'bg-primary/10 text-primary': i18n.locale === item.code }"
                                                     @click="changeLanguage(item), close()"
                                                 >
-                                                    <img
-                                                        class="w-5 h-5 object-cover rounded-full"
-                                                        :src="`/assets/images/flags/${item.code.toUpperCase()}.svg`"
-                                                        alt=""
-                                                    />
+                                                    <img class="w-5 h-5 object-cover rounded-full" :src="`/assets/images/flags/${item.code.toUpperCase()}.svg`" alt="" />
                                                     <span class="ltr:ml-3 rtl:mr-3">{{ item.name }}</span>
                                                 </button>
                                             </li>
@@ -59,10 +46,11 @@
                             </Popper>
                         </div>
                     </div>
+
                     <div class="mx-auto w-full max-w-[440px]">
                         <div class="mb-7">
-                            <h1 class="mb-3 text-2xl font-bold !leading-snug dark:text-white">Forgot Password</h1>
-                            <p class="text-white-dark">Enter your email and we will send a secure reset link.</p>
+                            <h1 class="mb-3 text-2xl font-bold !leading-snug dark:text-white">Create New Password</h1>
+                            <p class="text-white-dark">Enter your new password below to regain access to your account.</p>
                         </div>
 
                         <div v-if="successMessage" class="mb-5 rounded-md border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
@@ -72,13 +60,13 @@
                             {{ authStore.error }}
                         </div>
 
-                        <form class="space-y-5" @submit.prevent="submitForgotPassword">
+                        <form class="space-y-5" @submit.prevent="submitResetPassword">
                             <div>
                                 <label for="Email" class="dark:text-white">Email</label>
                                 <div class="relative text-white-dark">
                                     <input
                                         id="Email"
-                                        v-model="email"
+                                        v-model="form.email"
                                         type="email"
                                         placeholder="Enter Email"
                                         class="form-input ps-10 placeholder:text-white-dark"
@@ -92,19 +80,46 @@
                                     </span>
                                 </div>
                             </div>
+
+                            <div>
+                                <label for="Password" class="dark:text-white">New Password</label>
+                                <input
+                                    id="Password"
+                                    v-model="form.password"
+                                    type="password"
+                                    placeholder="Minimum 8 characters"
+                                    class="form-input"
+                                    autocomplete="new-password"
+                                    required
+                                />
+                            </div>
+
+                            <div>
+                                <label for="ConfirmPassword" class="dark:text-white">Confirm Password</label>
+                                <input
+                                    id="ConfirmPassword"
+                                    v-model="form.password_confirmation"
+                                    type="password"
+                                    placeholder="Confirm new password"
+                                    class="form-input"
+                                    autocomplete="new-password"
+                                    required
+                                />
+                                <p v-if="passwordMismatch" class="mt-1 text-xs text-danger">Passwords do not match.</p>
+                            </div>
+
                             <button
                                 type="submit"
-                                :disabled="authStore.loading"
+                                :disabled="authStore.loading || passwordMismatch"
                                 class="btn btn-gradient !mt-6 w-full border-0 uppercase shadow-[0_10px_20px_-10px_rgba(67,97,238,0.44)]"
                             >
-                                {{ authStore.loading ? 'Sending...' : 'Send Reset Link' }}
+                                {{ authStore.loading ? 'Resetting...' : 'Reset Password' }}
                             </button>
                         </form>
 
                         <div class="mt-6 text-center dark:text-white">
-                            Remember your password?
                             <router-link to="/auth/boxed-signin" class="uppercase text-primary underline transition hover:text-black dark:hover:text-white">
-                                Sign In
+                                Back to Sign In
                             </router-link>
                         </div>
                     </div>
@@ -113,34 +128,53 @@
         </div>
     </div>
 </template>
+
 <script lang="ts" setup>
-    import { computed, reactive, ref } from 'vue';
-    import { useI18n } from 'vue-i18n';
-    import appSetting from '@/app-setting';
-    import { useAppStore } from '@/stores/index';
-    import { useAuthStore } from '@/stores/auth';
-    import { useMeta } from '@/composables/use-meta';
-    useMeta({ title: 'Forgot Password' });
+import { computed, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { useRoute, useRouter } from 'vue-router';
+import appSetting from '@/app-setting';
+import { useAppStore } from '@/stores/index';
+import { useAuthStore } from '@/stores/auth';
+import { useMeta } from '@/composables/use-meta';
 
-    const store = useAppStore();
-    const authStore = useAuthStore();
-    const email = ref('');
-    const successMessage = ref('');
+useMeta({ title: 'Reset Password' });
 
-    const submitForgotPassword = async () => {
-        successMessage.value = '';
-        try {
-            successMessage.value = await authStore.forgotPassword(email.value);
-        } catch (_) {}
-    };
+const route = useRoute();
+const router = useRouter();
+const store = useAppStore();
+const authStore = useAuthStore();
+const successMessage = ref('');
 
-    // multi language
-    const i18n = reactive(useI18n());
-    const changeLanguage = (item: any) => {
-        i18n.locale = item.code;
-        appSetting.toggleLanguage(item);
-    };
-    const currentFlag = computed(() => {
-        return `/assets/images/flags/${i18n.locale.toUpperCase()}.svg`;
-    });
+const form = reactive({
+    token: String(route.params.token || ''),
+    email: String(route.query.email || ''),
+    password: '',
+    password_confirmation: '',
+});
+
+const passwordMismatch = computed(
+    () => form.password_confirmation.length > 0 && form.password !== form.password_confirmation
+);
+
+const submitResetPassword = async () => {
+    successMessage.value = '';
+
+    if (passwordMismatch.value) {
+        authStore.error = 'Passwords do not match.';
+        return;
+    }
+
+    try {
+        successMessage.value = await authStore.resetPassword(form);
+        setTimeout(() => router.push({ name: 'boxed-signin', query: { reset: '1' } }), 1200);
+    } catch (_) {}
+};
+
+const i18n = reactive(useI18n());
+const changeLanguage = (item: any) => {
+    i18n.locale = item.code;
+    appSetting.toggleLanguage(item);
+};
+const currentFlag = computed(() => `/assets/images/flags/${i18n.locale.toUpperCase()}.svg`);
 </script>

@@ -3,10 +3,12 @@
 namespace App\Services;
 
 use App\Models\QuickBooksAccount;
+use App\Models\QuickBooksCustomer;
 use App\Models\QuickBooksInvoice;
 use App\Models\QuickBooksToken;
 use App\Models\QuickBooksTransaction;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use QuickBooksOnline\API\Core\OAuth\OAuth2\OAuth2LoginHelper;
@@ -124,7 +126,7 @@ class QuickBooksService
         // Re-read the token with a pessimistic lock to prevent concurrent refreshes.
         // If two requests hit this method simultaneously, only one will actually
         // call the QBO API; the other will wait and then find the token already fresh.
-        return \DB::transaction(function () use ($token) {
+        return DB::transaction(function () use ($token) {
             /** @var QuickBooksToken $fresh */
             $fresh = QuickBooksToken::where('id', $token->id)->lockForUpdate()->first();
 
@@ -205,6 +207,7 @@ class QuickBooksService
         $token->delete();
 
         QuickBooksAccount::where('realm_id', $realmId)->delete();
+        QuickBooksCustomer::where('realm_id', $realmId)->delete();
         QuickBooksInvoice::where('realm_id', $realmId)->delete();
         QuickBooksTransaction::where('realm_id', $realmId)->delete();
 
@@ -219,6 +222,28 @@ class QuickBooksService
     // These use the QuickBooks REST API directly via Laravel's HTTP client with
     // Accept: application/json — no XML / DOMDocument / SimpleXML required.
     // ──────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Sync company profile details for the connected QBO realm.
+     */
+    public function syncCompanyInfo(QuickBooksToken $token): int
+    {
+        $rows = $this->qbQuery($token, 'SELECT * FROM CompanyInfo', 'CompanyInfo');
+        $company = $rows[0] ?? null;
+
+        if (! $company) {
+            return 0;
+        }
+
+        $token->update([
+            'company_name'  => $company->CompanyName ?? $company->LegalName ?? null,
+            'legal_name'    => $company->LegalName ?? null,
+            'company_email' => $company->Email->Address ?? null,
+            'country'       => $company->Country ?? null,
+        ]);
+
+        return 1;
+    }
 
     /**
      * Sync the Chart of Accounts from QBO.
@@ -247,6 +272,36 @@ class QuickBooksService
         }
 
         Log::info("QuickBooks: synced {$synced} accounts for realm {$token->realm_id}.");
+
+        return $synced;
+    }
+
+    /**
+     * Sync Customers from QBO.
+     */
+    public function syncCustomers(QuickBooksToken $token): int
+    {
+        $maxResults = config('quickbooks.max_results', 1000);
+        $rows       = $this->qbQuery($token, "SELECT * FROM Customer MAXRESULTS {$maxResults}", 'Customer');
+        $synced     = 0;
+
+        foreach ($rows as $customer) {
+            QuickBooksCustomer::updateOrCreate(
+                ['realm_id' => $token->realm_id, 'qbo_id' => $customer->Id],
+                [
+                    'display_name' => $customer->DisplayName ?? $customer->FullyQualifiedName ?? null,
+                    'company_name' => $customer->CompanyName ?? null,
+                    'email'        => $customer->PrimaryEmailAddr->Address ?? null,
+                    'phone'        => $customer->PrimaryPhone->FreeFormNumber ?? null,
+                    'balance'      => $customer->Balance ?? 0,
+                    'active'       => (bool) ($customer->Active ?? true),
+                    'synced_at'    => now(),
+                ]
+            );
+            $synced++;
+        }
+
+        Log::info("QuickBooks: synced {$synced} customers for realm {$token->realm_id}.");
 
         return $synced;
     }
@@ -357,12 +412,14 @@ class QuickBooksService
     /**
      * Run all three sync operations for a token and return a summary.
      *
-     * @return array{accounts: int, invoices: int, transactions: int}
+     * @return array{company_info: int, accounts: int, customers: int, invoices: int, transactions: int}
      */
     public function syncAll(QuickBooksToken $token): array
     {
         return [
+            'company_info' => $this->syncCompanyInfo($token),
             'accounts'     => $this->syncAccounts($token),
+            'customers'    => $this->syncCustomers($token),
             'invoices'     => $this->syncInvoices($token),
             'transactions' => $this->syncTransactions($token),
         ];

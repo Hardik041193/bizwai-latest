@@ -6,7 +6,9 @@ use App\Models\User;
 use Illuminate\Auth\Events\Verified;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
@@ -113,6 +115,74 @@ class AuthController extends Controller
         $token = $user->createToken('admin-token')->plainTextToken;
 
         return response()->json(['user' => $user, 'token' => $token]);
+    }
+
+    /**
+     * Send a password reset link for regular front users only.
+     *
+     * Admin accounts intentionally do not use this front-user flow.
+     */
+    public function forgotPassword(Request $request): JsonResponse
+    {
+        $request->validate([
+            'email' => ['required', 'email'],
+        ]);
+
+        $user = User::where('email', $request->email)->first();
+
+        if (! $user || $user->isAdmin()) {
+            return response()->json([
+                'message' => 'If a matching user account exists, a password reset link has been sent.',
+            ]);
+        }
+
+        Password::sendResetLink($request->only('email'));
+
+        return response()->json([
+            'message' => 'If a matching user account exists, a password reset link has been sent.',
+        ]);
+    }
+
+    /**
+     * Reset password for regular front users only.
+     */
+    public function resetPassword(Request $request): JsonResponse
+    {
+        $request->validate([
+            'token'    => ['required', 'string'],
+            'email'    => ['required', 'email'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+        ]);
+
+        $user = User::where('email', $request->email)->first();
+
+        if (! $user || $user->isAdmin()) {
+            throw ValidationException::withMessages([
+                'email' => ['This password reset link is invalid.'],
+            ]);
+        }
+
+        $status = Password::reset(
+            $request->only('email', 'password', 'password_confirmation', 'token'),
+            function (User $user, string $password) {
+                $user->forceFill([
+                    'password' => Hash::make($password),
+                    'remember_token' => Str::random(60),
+                ])->save();
+
+                $user->tokens()->delete();
+            }
+        );
+
+        if ($status !== Password::PASSWORD_RESET) {
+            throw ValidationException::withMessages([
+                'email' => [__($status)],
+            ]);
+        }
+
+        return response()->json([
+            'message' => 'Password reset successfully. You can now sign in.',
+        ]);
     }
 
     /**

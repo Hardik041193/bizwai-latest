@@ -71,6 +71,12 @@
                             </svg>
                             Email verified successfully! You can now sign in.
                         </div>
+                        <div v-if="justReset" class="mb-5 rounded-md bg-success/10 border border-success/30 px-4 py-3 text-sm text-success flex items-center gap-2">
+                            <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                            </svg>
+                            Password reset successfully! You can now sign in.
+                        </div>
 
                         <form class="space-y-5 dark:text-white" @submit.prevent="handleLogin">
                             <div v-if="authStore.error" class="rounded-md px-4 py-3 text-sm"
@@ -102,7 +108,12 @@
                                 </div>
                             </div>
                             <div>
-                                <label for="Password">Password</label>
+                                <div class="flex items-center justify-between">
+                                    <label for="Password">Password</label>
+                                    <router-link to="/auth/forgot-password" class="text-xs font-semibold text-primary hover:underline">
+                                        Forgot Password?
+                                    </router-link>
+                                </div>
                                 <div class="relative text-white-dark">
                                     <input id="Password" v-model="form.password" type="password" placeholder="Enter Password" class="form-input ps-10 placeholder:text-white-dark" required />
                                     <span class="absolute start-4 top-1/2 -translate-y-1/2">
@@ -273,6 +284,7 @@
 
     // Show success banner if redirected after email verification
     const justVerified = computed(() => route.query.verified === '1');
+    const justReset = computed(() => route.query.reset === '1');
 
     const form = reactive({ email: '', password: '' });
 

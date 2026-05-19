@@ -471,7 +471,7 @@
                             </li>
                         </template>
 
-                        <!-- Regular user: personal invoice portal -->
+                        <!-- Regular user: own QuickBooks data portal -->
                         <template v-else>
                             <li class="nav-item">
                                 <router-link to="/quickbooks/portal" class="group" @click="toggleMobileMenu">
@@ -480,7 +480,7 @@
                                             <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke="currentColor" stroke-width="1.5"/>
                                             <path opacity="0.5" d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                                         </svg>
-                                        <span class="ltr:pl-3 rtl:pr-3 text-black dark:text-[#506690] dark:group-hover:text-white-dark">My Invoices</span>
+                                        <span class="ltr:pl-3 rtl:pr-3 text-black dark:text-[#506690] dark:group-hover:text-white-dark">QuickBooks Data</span>
                                         <span v-if="qbConnected" class="ltr:ml-auto rtl:mr-auto badge badge-outline-success text-xs px-1 py-0">Live</span>
                                     </div>
                                 </router-link>

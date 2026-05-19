@@ -28,7 +28,7 @@ const routes: RouteRecordRaw[] = [
         path: '/quickbooks/connect',
         name: 'quickbooks-connect',
         component: () => import(/* webpackChunkName: "qb-connect" */ '../views/quickbooks/connect.vue'),
-        meta: { requiresAuth: true, requiresAdmin: true },
+        meta: { requiresAuth: true },
     },
     {
         path: '/quickbooks/connected',
@@ -593,7 +593,19 @@ const routes: RouteRecordRaw[] = [
         path: '/auth/boxed-password-reset',
         name: 'boxed-password-reset',
         component: () => import(/* webpackChunkName: "auth-boxed-password-reset" */ '../views/auth/boxed-password-reset.vue'),
-        meta: { layout: 'auth' },
+        meta: { layout: 'auth', guestOnly: true },
+    },
+    {
+        path: '/auth/forgot-password',
+        name: 'forgot-password',
+        component: () => import(/* webpackChunkName: "auth-boxed-password-reset" */ '../views/auth/boxed-password-reset.vue'),
+        meta: { layout: 'auth', guestOnly: true },
+    },
+    {
+        path: '/auth/reset-password/:token',
+        name: 'reset-password',
+        component: () => import(/* webpackChunkName: "auth-reset-password" */ '../views/auth/reset-password.vue'),
+        meta: { layout: 'auth', guestOnly: true },
     },
     {
         path: '/auth/cover-login',

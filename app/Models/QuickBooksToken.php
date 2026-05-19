@@ -12,6 +12,10 @@ class QuickBooksToken extends Model
     protected $fillable = [
         'user_id',
         'realm_id',
+        'company_name',
+        'legal_name',
+        'company_email',
+        'country',
         'access_token',
         'refresh_token',
         'token_expires_at',

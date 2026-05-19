@@ -7,6 +7,10 @@ export interface QBStatus {
     connected: boolean;
     role?: 'admin' | 'user';
     realm_id?: string;
+    company_name?: string | null;
+    legal_name?: string | null;
+    company_email?: string | null;
+    country?: string | null;
     token_expires_at?: string;
     refresh_token_expires_at?: string;
     access_token_expired?: boolean;
@@ -19,7 +23,17 @@ export interface QBSummary {
     outstanding_balance: number;
     total_expenses: number;
     overdue_invoices: number;
+    total_invoices: number;
+    total_customers: number;
+    invoice_total: number;
     last_synced_at: string | null;
+    company?: {
+        name: string | null;
+        legal_name: string | null;
+        email: string | null;
+        country: string | null;
+        realm_id: string;
+    };
 }
 
 export interface QBAccount {
@@ -48,6 +62,17 @@ export interface QBInvoice {
     line_items: any[];
 }
 
+export interface QBCustomer {
+    id: number;
+    qbo_id: string;
+    display_name: string | null;
+    company_name: string | null;
+    email: string | null;
+    phone: string | null;
+    balance: string;
+    active: boolean;
+}
+
 export interface QBTransaction {
     id: number;
     qbo_id: string;
@@ -71,6 +96,7 @@ interface QBState {
     status: QBStatus | null;
     summary: QBSummary | null;
     accounts: Paginated<QBAccount> | null;
+    customers: Paginated<QBCustomer> | null;
     invoices: Paginated<QBInvoice> | null;
     transactions: Paginated<QBTransaction> | null;
     loading: boolean;
@@ -85,6 +111,7 @@ export const useQuickBooksStore = defineStore('quickbooks', {
         status: null,
         summary: null,
         accounts: null,
+        customers: null,
         invoices: null,
         transactions: null,
         loading: false,
@@ -132,6 +159,19 @@ export const useQuickBooksStore = defineStore('quickbooks', {
                 this.accounts = data;
             } catch (err: any) {
                 this.error = err.response?.data?.message ?? 'Failed to load accounts.';
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async fetchCustomers(params: Record<string, any> = {}): Promise<void> {
+            this.loading = true;
+            this.error = null;
+            try {
+                const { data } = await axios.get('/api/quickbooks/customers', { params });
+                this.customers = data;
+            } catch (err: any) {
+                this.error = err.response?.data?.message ?? 'Failed to load customers.';
             } finally {
                 this.loading = false;
             }
