@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use Illuminate\Auth\Notifications\VerifyEmail;
+use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
@@ -47,6 +48,16 @@ class AppServiceProvider extends ServiceProvider
                 . '?' . http_build_query([
                     'expires'   => $queryParams['expires']   ?? '',
                     'signature' => $queryParams['signature'] ?? '',
+                ]);
+        });
+
+        ResetPassword::createUrlUsing(function (object $notifiable, string $token): string {
+            $frontendBase = rtrim(config('app.url'), '/');
+
+            return $frontendBase
+                . '/auth/reset-password/' . $token
+                . '?' . http_build_query([
+                    'email' => $notifiable->getEmailForPasswordReset(),
                 ]);
         });
     }

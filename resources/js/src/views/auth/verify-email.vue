@@ -131,28 +131,9 @@
                             </router-link>
                         </div>
 
-                        <!-- Dev helper -->
-                        <div class="mt-10 w-full max-w-md rounded-lg border border-warning/40 bg-warning/5 p-4 text-left">
-                            <div class="mb-2 flex items-center gap-2">
-                                <span class="inline-block h-2 w-2 rounded-full bg-warning"></span>
-                                <p class="text-xs font-bold uppercase tracking-widest text-warning">Development Mode — No Real Email Sent</p>
-                            </div>
-                            <p class="mb-3 text-xs text-white-dark">
-                                Emails are written to <code class="rounded bg-black/5 px-1 py-0.5 dark:bg-white/5">storage/logs/laravel.log</code>.
-                                Run this command in the project terminal to get the verification link:
-                            </p>
-                            <div class="relative rounded bg-black/80 px-3 py-2 font-mono text-xs text-green-400">
-                                <code>{{ devCommand }}</code>
-                                <button type="button"
-                                    class="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-0.5 text-[10px] font-bold uppercase text-white/60 hover:text-white"
-                                    @click="copyDevCommand">
-                                    {{ copied ? '✓ Copied' : 'Copy' }}
-                                </button>
-                            </div>
-                            <p class="mt-2 text-xs text-white-dark">
-                                Open the printed URL in your browser — the SPA will auto-verify your email.
-                            </p>
-                        </div>
+                        <p class="mt-8 max-w-md text-xs text-white-dark">
+                            If you do not see the email, please check your spam or junk folder. You can resend the verification email after the cooldown expires.
+                        </p>
                     </template>
 
                 </div>
@@ -190,7 +171,6 @@ let countdownTimer: ReturnType<typeof setInterval> | null = null;
 const resendSuccess  = ref(false);
 const resendCooldown = ref(0);
 let cooldownTimer: ReturnType<typeof setInterval> | null = null;
-const copied = ref(false);
 
 const steps = [
     'Open your email inbox for ' + (authStore.user?.email ?? 'the address you registered with'),
@@ -198,9 +178,6 @@ const steps = [
     'Click the "Verify Email Address" button in the email',
     'You will be redirected back here and automatically signed in',
 ];
-
-const appOrigin  = window.location.origin;
-const devCommand = `grep -oP '${appOrigin}/auth/verify-email/[^"&<\\\\s]+' storage/logs/laravel.log | tail -1`;
 
 onMounted(async () => {
     if (isVerifyingLink.value) {
@@ -260,10 +237,4 @@ const handleResend = async () => {
     } catch (_) {}
 };
 
-const copyDevCommand = () => {
-    navigator.clipboard.writeText(devCommand).then(() => {
-        copied.value = true;
-        setTimeout(() => (copied.value = false), 2000);
-    });
-};
 </script>

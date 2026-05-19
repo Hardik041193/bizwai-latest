@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\Route;
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/admin/login', [AuthController::class, 'adminLogin']);
+Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:5,1');
+Route::post('/reset-password', [AuthController::class, 'resetPassword'])->middleware('throttle:5,1');
 
 /**
  * Email verification — called by the SPA after the user clicks the link.
@@ -63,6 +65,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/status',       [QuickBooksController::class, 'status'])->name('status');
             Route::get('/summary',      [QuickBooksController::class, 'summary'])->name('summary');
             Route::get('/accounts',     [QuickBooksController::class, 'accounts'])->name('accounts');
+            Route::get('/customers',    [QuickBooksController::class, 'customers'])->name('customers');
             Route::get('/invoices',     [QuickBooksController::class, 'invoices'])->name('invoices');
             Route::get('/transactions', [QuickBooksController::class, 'transactions'])->name('transactions');
         });

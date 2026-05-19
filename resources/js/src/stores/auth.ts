@@ -111,6 +111,45 @@ export const useAuthStore = defineStore('auth', {
             }
         },
 
+        async forgotPassword(email: string): Promise<string> {
+            this.loading = true;
+            this.error = null;
+            try {
+                const response = await axios.post('/api/forgot-password', { email });
+                return response.data.message ?? 'Password reset link sent.';
+            } catch (err: any) {
+                const errors = err.response?.data?.errors;
+                this.error = errors
+                    ? errors[Object.keys(errors)[0]]?.[0]
+                    : (err.response?.data?.message ?? 'Failed to send password reset link.');
+                throw err;
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async resetPassword(payload: {
+            token: string;
+            email: string;
+            password: string;
+            password_confirmation: string;
+        }): Promise<string> {
+            this.loading = true;
+            this.error = null;
+            try {
+                const response = await axios.post('/api/reset-password', payload);
+                return response.data.message ?? 'Password reset successfully.';
+            } catch (err: any) {
+                const errors = err.response?.data?.errors;
+                this.error = errors
+                    ? errors[Object.keys(errors)[0]]?.[0]
+                    : (err.response?.data?.message ?? 'Failed to reset password.');
+                throw err;
+            } finally {
+                this.loading = false;
+            }
+        },
+
         async resendVerification(): Promise<void> {
             this.loading = true;
             this.error = null;
