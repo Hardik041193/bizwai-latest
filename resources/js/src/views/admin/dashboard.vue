@@ -1,6 +1,6 @@
 <template>
     <div>
-        <ul class="flex space-x-2 rtl:space-x-reverse">
+        <ul class="flex space-x-2 rtl:space-x-reverse text-base">
             <li>
                 <a href="javascript:;" class="text-primary hover:underline">Admin</a>
             </li>
@@ -13,9 +13,9 @@
             <!-- Welcome banner -->
             <div class="mb-6 flex items-center justify-between rounded-xl bg-gradient-to-r from-primary/90 to-blue-700 p-6 text-white shadow-[0_10px_30px_-10px_rgba(67,97,238,0.5)]">
                 <div>
-                    <p class="text-sm font-semibold uppercase tracking-widest text-white/70">Welcome back,</p>
-                    <h1 class="mt-1 text-2xl font-extrabold">{{ authStore.user?.name }}</h1>
-                    <p class="mt-1 text-sm text-white/70">Administrator · BizWai Control Panel</p>
+                    <p class="text-base tracking-widest text-white/70">Welcome back,</p>
+                    <h1 class="mt-1 text-3xl font-bold">Dashboard</h1>
+                    <p class="mt-1 text-base text-white/70">Administrator · BizWai Control Panel</p>
                 </div>
                 <div class="hidden sm:flex h-16 w-16 items-center justify-center rounded-full bg-white/20">
                     <svg class="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -30,7 +30,7 @@
                 <div v-for="stat in stats" :key="stat.label"
                     class="panel flex items-center justify-between rounded-xl p-5">
                     <div>
-                        <p class="text-sm font-semibold text-white-dark">{{ stat.label }}</p>
+                        <p class="text-base text-white-dark">{{ stat.label }}</p>
                         <p class="mt-1 text-2xl font-bold text-dark dark:text-white">{{ stat.value }}</p>
                         <p class="mt-1 flex items-center gap-1 text-xs"
                             :class="stat.up ? 'text-success' : 'text-danger'">

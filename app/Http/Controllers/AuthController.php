@@ -20,11 +20,15 @@ class AuthController extends Controller
             'name'     => 'required|string|max:255',
             'email'    => 'required|email|unique:users,email',
             'password' => 'required|string|min:8|confirmed',
+            'phone' => 'nullable|regex:/^[0-9+\-\s()]+$/|min:10|max:20',
+            'company_name' => 'nullable|string|max:255',
         ]);
 
         $user = User::create([
             'name'     => $request->name,
             'email'    => $request->email,
+            'phone'        => $request->phone,
+            'company_name' => $request->company_name,
             'password' => Hash::make($request->password),
             'role'     => 'user',
         ]);

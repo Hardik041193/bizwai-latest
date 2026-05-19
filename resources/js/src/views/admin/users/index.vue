@@ -1,7 +1,7 @@
 <template>
     <div>
         <!-- Breadcrumb -->
-        <ul class="flex space-x-2 rtl:space-x-reverse mb-6">
+        <ul class="flex space-x-2 rtl:space-x-reverse mb-6 text-base">
             <li><span class="text-primary">Admin</span></li>
             <li class="before:content-['/'] ltr:before:mr-2 rtl:before:ml-2 text-white-dark">Users</li>
         </ul>
@@ -9,8 +9,8 @@
         <!-- Header row -->
         <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
             <div>
-                <h1 class="text-2xl font-bold dark:text-white">User Management</h1>
-                <p class="text-sm text-white-dark/70 mt-0.5">Manage all platform users</p>
+                <h1 class="text-3xl font-bold dark:text-white">User Management</h1>
+                <p class="text-base text-white-dark/70 mt-0.5">Manage all platform users</p>
             </div>
             <button @click="openCreateModal" class="btn btn-primary gap-2">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -80,23 +80,23 @@
                 <table class="table-hover">
                     <thead>
                         <tr>
-                            <th class="w-10">#</th>
                             <th>User</th>
                             <th>Contact</th>
-                            <th>Role</th>
-                            <th>Status</th>
+                            <th>Company</th>
+                            <th>Verification</th>
                             <th>Joined</th>
-                            <th class="text-center w-28">Actions</th>
+                            <th>Status</th>
+                            <th>QBO Status</th>
+                            <th class="text-center w-24">Action</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr v-for="user in usersStore.users.data" :key="user.id">
-                            <td class="text-white-dark/60 text-sm">{{ user.id }}</td>
 
-                            <!-- User info -->
+                            <!-- User -->
                             <td>
                                 <div class="flex items-center gap-3">
-                                    <div class="w-9 h-9 rounded-full overflow-hidden shrink-0 bg-primary/10 flex items-center justify-center">
+                                    <div class="w-10 h-10 rounded-full overflow-hidden shrink-0 bg-primary/10 flex items-center justify-center">
                                         <img v-if="user.avatar_url" :src="user.avatar_url" :alt="user.name" class="w-full h-full object-cover" />
                                         <span v-else class="text-sm font-bold text-primary">{{ initials(user.name) }}</span>
                                     </div>
@@ -109,29 +109,86 @@
 
                             <!-- Contact -->
                             <td>
-                                <p v-if="user.phone" class="text-sm">{{ user.phone }}</p>
-                                <p v-if="user.job_title" class="text-xs text-white-dark/60">{{ user.job_title }}</p>
-                                <span v-if="!user.phone && !user.job_title" class="text-white-dark/30 text-xs">—</span>
+                                <div v-if="user.phone" class="flex items-center gap-1.5 text-sm">
+                                    <svg class="w-4 h-4 text-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.948V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+                                    </svg>
+                                    {{ user.phone }}
+                                </div>
+                                <span v-else class="text-white-dark/30 text-xs">—</span>
                             </td>
 
-                            <!-- Role -->
+                            <!-- Company -->
                             <td>
-                                <span :class="user.role === 'admin' ? 'badge badge-outline-success' : 'badge badge-outline-primary'">
-                                    {{ user.role === 'admin' ? 'Admin' : 'User' }}
-                                </span>
+                                <div v-if="user.job_title" class="flex items-center gap-1.5 text-sm">
+                                    <svg class="w-4 h-4 text-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                                    </svg>
+                                    {{ user.job_title }}
+                                </div>
+                                <span v-else class="text-white-dark/30 text-xs">—</span>
                             </td>
 
-                            <!-- Verified status -->
+                            <!-- Verification -->
                             <td>
                                 <span :class="user.email_verified_at ? 'badge badge-outline-success' : 'badge badge-outline-warning'">
+                                    <svg v-if="user.email_verified_at" class="w-3.5 h-3.5 mr-1 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                    </svg>
+                                    <svg v-else class="w-3.5 h-3.5 mr-1 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                    </svg>
                                     {{ user.email_verified_at ? 'Verified' : 'Pending' }}
                                 </span>
                             </td>
 
-                            <!-- Joined -->
+                            <!-- QBO Status -->
+                            <td>
+                                <span :class="user.qbo_status === 1 ? 'badge badge-outline-success' : 'badge badge-outline-warning'">
+                                    <svg v-if="user.qbo_status === 1" class="w-3.5 h-3.5 mr-1 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                    </svg>
+                                    <svg v-else class="w-3.5 h-3.5 mr-1 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                    </svg>
+                                    {{ user.qbo_status === 1 ? 'Connected' : 'Disconnected' }}
+                                </span>
+                            </td>
+
+                             <!-- Joined -->
                             <td class="text-sm text-white-dark/70">{{ formatDate(user.created_at) }}</td>
 
-                            <!-- Actions -->
+                            <!-- Status -->
+                            <td>
+                                <div class="flex items-center gap-2">
+                                    <button
+                                        v-if="user.status !== 1"
+                                        @click="onUpdateStatus(user, 1)"
+                                        :disabled="usersStore.savingStatus === user.id"
+                                        class="btn btn-sm btn-success gap-1.5"
+                                    >
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                        </svg>
+                                        Approve
+                                    </button>
+                                    <button
+                                        v-else
+                                        @click="onUpdateStatus(user, 2)"
+                                        :disabled="usersStore.savingStatus === user.id"
+                                        class="btn btn-sm btn-danger gap-1.5"
+                                    >
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                        </svg>
+                                        Revoke
+                                    </button>
+                                </div>
+                            </td>
+
+                           
+
+                            <!-- Action -->
                             <td>
                                 <div class="flex items-center justify-center gap-2">
                                     <button
@@ -165,15 +222,18 @@
             <div v-if="usersStore.users && usersStore.users.last_page > 1"
                 class="flex items-center justify-between mt-5 flex-wrap gap-3">
                 <p class="text-sm text-white-dark/60">
-                    Page {{ usersStore.users.current_page }} of {{ usersStore.users.last_page }}
-                    ({{ usersStore.users.total }} total)
+                    Showing {{ usersStore.users.from }} to {{ usersStore.users.to }} of {{ usersStore.users.total }} users
                 </p>
                 <div class="flex gap-1">
                     <button
                         @click="loadUsers(usersStore.users.current_page - 1)"
                         :disabled="usersStore.users.current_page <= 1"
                         class="btn btn-sm btn-outline-primary"
-                    >Prev</button>
+                    >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                        </svg>
+                    </button>
 
                     <template v-for="page in paginationPages" :key="page">
                         <span v-if="page === '...'" class="btn btn-sm btn-outline-secondary cursor-default">…</span>
@@ -188,7 +248,11 @@
                         @click="loadUsers(usersStore.users.current_page + 1)"
                         :disabled="usersStore.users.current_page >= usersStore.users.last_page"
                         class="btn btn-sm btn-outline-primary"
-                    >Next</button>
+                    >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
+                    </button>
                 </div>
             </div>
         </div>
@@ -261,7 +325,7 @@
                         </div>
 
                         <!-- Role -->
-                        <div>
+                        <!-- <div>
                             <label class="block text-sm font-medium mb-1.5">Role <span class="text-danger">*</span></label>
                             <select v-model="form.role" class="form-select"
                                 :class="{ 'border-danger': usersStore.errors.role }">
@@ -269,7 +333,7 @@
                                 <option value="admin">Admin</option>
                             </select>
                             <p v-if="usersStore.errors.role" class="text-danger text-xs mt-1">{{ usersStore.errors.role[0] }}</p>
-                        </div>
+                        </div> -->
 
                         <!-- Phone -->
                         <div>
@@ -284,7 +348,7 @@
                         </div>
 
                         <!-- Address -->
-                        <div>
+                        <div class="sm:col-span-2">
                             <label class="block text-sm font-medium mb-1.5">Address</label>
                             <input v-model="form.address" type="text" class="form-input" placeholder="City, Country" />
                         </div>
@@ -307,7 +371,7 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, reactive, computed, onMounted } from 'vue';
+import { reactive, computed, onMounted } from 'vue';
 import { useMeta }      from '@/composables/use-meta';
 import { useToast }     from '@/composables/use-toast';
 import { useAuthStore } from '@/stores/auth';
@@ -319,7 +383,7 @@ const usersStore = useUsersStore();
 const authStore  = useAuthStore();
 const { showToast, confirmDialog } = useToast();
 
-// ── Filters & search ─────────────────────────────────────────────────────────
+// ── Filters & search ──────────────────────────────────────────────────────────
 const filters = reactive({ search: '', role: '', per_page: 15 });
 let searchTimer: ReturnType<typeof setTimeout>;
 
@@ -346,9 +410,9 @@ const paginationPages = computed((): (number | '...')[] => {
     const last    = usersStore.users?.last_page    ?? 1;
     if (last <= 7) return Array.from({ length: last }, (_, i) => i + 1);
     const pages: (number | '...')[] = [1];
-    if (current > 3)         pages.push('...');
+    if (current > 3)        pages.push('...');
     for (let i = Math.max(2, current - 1); i <= Math.min(last - 1, current + 1); i++) pages.push(i);
-    if (current < last - 2)  pages.push('...');
+    if (current < last - 2) pages.push('...');
     pages.push(last);
     return pages;
 });
@@ -435,13 +499,27 @@ async function onDelete(user: AdminUser) {
     const ok = await usersStore.deleteUser(user.id);
     if (ok) {
         showToast('User deleted successfully.', 'success');
-        // If last item on page > 1, go back one page
         const page = usersStore.users?.data.length === 1 && (usersStore.users?.current_page ?? 1) > 1
             ? (usersStore.users?.current_page ?? 1) - 1
             : (usersStore.users?.current_page ?? 1);
         await loadUsers(page);
     } else {
         showToast(usersStore.error ?? 'Failed to delete user.', 'error');
+    }
+}
+
+// ── Status update ─────────────────────────────────────────────────────────────
+async function onUpdateStatus(user: AdminUser, status: 1 | 2) {
+    if (user.status === status) return;
+
+    const ok = await usersStore.updateUserStatus(user.id, status);
+    if (ok) {
+        showToast(
+            status === 1 ? 'User approved successfully.' : 'User rejected successfully.',
+            'success',
+        );
+    } else {
+        showToast(usersStore.error ?? 'Failed to update status.', 'error');
     }
 }
 

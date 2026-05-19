@@ -11,12 +11,13 @@ use Illuminate\Support\Facades\Hash;
 
 class UserController extends Controller
 {
-    /**
+   /**
      * Guard: only admins may access any action in this controller.
      */
     private function authorizeAdmin(Request $request): void
     {
-        if (! $request->user()?->isAdmin()) {
+        $user = $request->user();
+        if (! $user || ! $user->isAdmin()) {
             abort(403, 'Admin access required.');
         }
     }
@@ -32,19 +33,18 @@ class UserController extends Controller
 
         $request->validate([
             'search'   => ['nullable', 'string', 'max:100'],
-            'role'     => ['nullable', 'in:admin,user'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
 
         $users = User::query()
+            ->where('role', 'user')                          // always filter to users only
             ->when($request->filled('search'), function ($q) use ($request) {
                 $term = '%' . $request->search . '%';
                 $q->where(function ($q2) use ($term) {
                     $q2->where('name', 'like', $term)
-                       ->orWhere('email', 'like', $term);
+                    ->orWhere('email', 'like', $term);
                 });
             })
-            ->when($request->filled('role'), fn ($q) => $q->where('role', $request->role))
             ->orderBy('id', 'desc')
             ->paginate($request->integer('per_page', 15));
 
@@ -137,15 +137,81 @@ class UserController extends Controller
     }
 
     /**
+     * PATCH /api/admin/users/{user}/approve
+     * Set status = 1 (Approved)
+     */
+    public function approve(Request $request, User $user): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+
+        // Prevent acting on yourself (optional but recommended)
+        if ($user->id === $request->user()->id) {
+            return response()->json(['message' => 'You cannot change your own status.'], 422);
+        }
+
+        if ($user->status === 1) {
+            return response()->json(['message' => 'User is already approved.'], 422);
+        }
+
+        $user->status = 1;
+        $user->save();
+
+        return response()->json([
+            'message' => 'User approved successfully.',
+            'user'    => $this->resource($user),
+        ]);
+    }
+
+    /**
+     * PATCH /api/admin/users/{user}/revoke
+     * Set status = 2 (Rejected / Revoked)
+     */
+    public function revoke(Request $request, User $user): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+
+        // Prevent self-revocation
+        if ($user->id === $request->user()->id) {
+            return response()->json(['message' => 'You cannot change your own status.'], 422);
+        }
+
+        if ($user->status === 2) {
+            return response()->json(['message' => 'User is already revoked.'], 422);
+        }
+
+        // Revoke all active tokens so the user is logged out immediately
+        $user->tokens()->delete();
+
+        $user->status = 2;
+        $user->save();
+
+        return response()->json([
+            'message' => 'User revoked successfully.',
+            'user'    => $this->resource($user),
+        ]);
+    }
+
+    /**
      * Consistent user resource shape returned to the frontend.
      */
     private function resource(User $user): array
     {
+        if ((int) $user->status === 1) {
+            $statusLabel = 'Approved';
+        } elseif ((int) $user->status === 2) {
+            $statusLabel = 'Rejected';
+        } else {
+            $statusLabel = 'Pending';
+        }
+
         return [
             'id'                => $user->id,
             'name'              => $user->name,
             'email'             => $user->email,
             'role'              => $user->role,
+            'status'            => $user->status,
+            'qbo_status'        => $user->qbo_status,
+            'status_label'      => $statusLabel,
             'phone'             => $user->phone,
             'job_title'         => $user->job_title,
             'address'           => $user->address,

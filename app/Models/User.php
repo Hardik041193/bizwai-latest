@@ -15,7 +15,7 @@ class User extends Authenticatable implements MustVerifyEmail
 
     protected $fillable = [
         'name', 'email', 'password', 'role',
-        'phone', 'job_title', 'address', 'bio', 'avatar',
+        'phone', 'job_title', 'address', 'bio', 'avatar', 'company_name', 'qbo_status',
     ];
 
     protected $hidden = ['password', 'remember_token'];
@@ -62,6 +62,9 @@ class User extends Authenticatable implements MustVerifyEmail
             'name'              => $this->name,
             'email'             => $this->email,
             'role'              => $this->role,
+            'status'            => $this->status,
+            'company_name'      => $this->company_name,
+            'qbo_status'        => $this->qbo_status,
             'phone'             => $this->phone,
             'job_title'         => $this->job_title,
             'address'           => $this->address,

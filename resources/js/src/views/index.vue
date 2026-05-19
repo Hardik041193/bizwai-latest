@@ -1021,7 +1021,7 @@
             chart: {
                 height: 325,
                 type: 'area',
-                fontFamily: 'Nunito, sans-serif',
+                fontFamily: 'Plus Jakarta Sans, sans-serif',
                 zoom: {
                     enabled: false,
                 },
@@ -1172,7 +1172,7 @@
             chart: {
                 type: 'donut',
                 height: 460,
-                fontFamily: 'Nunito, sans-serif',
+                fontFamily: 'Plus Jakarta Sans, sans-serif',
             },
             dataLabels: {
                 enabled: false,
@@ -1258,7 +1258,7 @@
             chart: {
                 height: 160,
                 type: 'bar',
-                fontFamily: 'Nunito, sans-serif',
+                fontFamily: 'Plus Jakarta Sans, sans-serif',
                 toolbar: {
                     show: false,
                 },
@@ -1341,7 +1341,7 @@
             chart: {
                 height: 290,
                 type: 'area',
-                fontFamily: 'Nunito, sans-serif',
+                fontFamily: 'Plus Jakarta Sans, sans-serif',
                 sparkline: {
                     enabled: true,
                 },

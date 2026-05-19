@@ -59,6 +59,7 @@
     }
 
     body {
+        font-family: Plus Jakarta Sans, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif;
         @apply bg-[#fafafa] font-nunito;
     }
 
@@ -715,4 +716,11 @@ hover:text-primary hover:before:!bg-primary ltr:before:mr-2 rtl:before:ml-2 dark
 }
 .no-animtion [data-height-collapsible] {
     transition: none !important;
+}
+
+.bg-primary{background-color: rgb(24 119 242);}
+.bg-primary:hover {
+    --tw-bg-opacity: 1;
+    background-color: #1464d1;
+    background-color: rgb(20 100 209 / var(--tw-bg-opacity, 1));
 }
