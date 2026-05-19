@@ -24,7 +24,7 @@
                     </a>
                 </div>
                 <div class="ltr:mr-2 rtl:ml-2 hidden sm:block">
-                    <ul class="flex items-center space-x-2 rtl:space-x-reverse dark:text-[#d0d2d6]">
+                    <!-- <ul class="flex items-center space-x-2 rtl:space-x-reverse dark:text-[#d0d2d6]">
                         <li>
                             <router-link
                                 to="/apps/calendar"
@@ -86,7 +86,7 @@
                                 </svg>
                             </router-link>
                         </li>
-                    </ul>
+                    </ul> -->
                 </div>
                 <div
                     class="sm:flex-1 ltr:sm:ml-0 ltr:ml-auto sm:rtl:mr-0 rtl:mr-auto flex items-center space-x-1.5 lg:space-x-2 rtl:space-x-reverse dark:text-[#d0d2d6]"
@@ -145,7 +145,7 @@
                             </svg>
                         </button>
                     </div>
-                    <div>
+                    <!-- <div>
                         <a
                             href="javascript:;"
                             v-show="store.theme === 'light'"
@@ -193,9 +193,9 @@
                                 <path opacity="0.5" d="M15 15H9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
                             </svg>
                         </a>
-                    </div>
+                    </div> -->
 
-                    <div class="dropdown shrink-0">
+                    <!-- <div class="dropdown shrink-0">
                         <Popper :placement="store.rtlClass === 'rtl' ? 'bottom-end' : 'bottom-start'" offsetDistance="8">
                             <button
                                 type="button"
@@ -448,7 +448,7 @@
                                 </ul>
                             </template>
                         </Popper>
-                    </div>
+                    </div> -->
 
                     <div class="dropdown shrink-0">
                         <Popper :placement="store.rtlClass === 'rtl' ? 'bottom-end' : 'bottom-start'" offsetDistance="8" class="!block">
