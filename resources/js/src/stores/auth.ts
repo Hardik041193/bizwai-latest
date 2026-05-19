@@ -38,7 +38,7 @@ export const useAuthStore = defineStore('auth', {
     },
 
     actions: {
-        async register(name: string, email: string, password: string, passwordConfirmation: string): Promise<void> {
+        async register(name: string, email: string, password: string, passwordConfirmation: string, phone: string, company_name: string): Promise<void> {
             this.loading = true;
             this.error = null;
             try {
@@ -47,6 +47,8 @@ export const useAuthStore = defineStore('auth', {
                     email,
                     password,
                     password_confirmation: passwordConfirmation,
+                    phone,
+                    company_name,
                 });
                 // Store token so resend endpoint works (auth:sanctum)
                 this.token = response.data.token;

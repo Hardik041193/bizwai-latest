@@ -6,6 +6,8 @@ export interface AdminUser {
     name: string;
     email: string;
     role: 'admin' | 'user';
+    status: 0 | 1 | 2;
+    status_label: string;
     phone: string | null;
     job_title: string | null;
     address: string | null;
@@ -38,18 +40,20 @@ interface UsersState {
     loading: boolean;
     saving: boolean;
     deleting: boolean;
+    savingStatus: number | null;
     errors: Record<string, string[]>;
     error: string | null;
 }
 
 export const useUsersStore = defineStore('users', {
     state: (): UsersState => ({
-        users:    null,
-        loading:  false,
-        saving:   false,
-        deleting: false,
-        errors:   {},
-        error:    null,
+        users:         null,
+        loading:       false,
+        saving:        false,
+        deleting:      false,
+        savingStatus:  null,
+        errors:        {},
+        error:         null,
     }),
 
     actions: {
@@ -113,6 +117,28 @@ export const useUsersStore = defineStore('users', {
                 return false;
             } finally {
                 this.deleting = false;
+            }
+        },
+
+        async updateUserStatus(id: number, status: 1 | 2): Promise<AdminUser | null> {
+            this.savingStatus = id;
+            this.error = null;
+            try {
+                const action = status === 1 ? 'approve' : 'revoke';
+                const { data } = await axios.patch(`/api/admin/users/${id}/${action}`);
+
+                if (this.users?.data) {
+                    this.users.data = this.users.data.map((user) =>
+                        user.id === id ? ({ ...user, ...data.user } as AdminUser) : user,
+                    );
+                }
+
+                return data.user as AdminUser;
+            } catch (err: any) {
+                this.error = err.response?.data?.message ?? 'Failed to update user status.';
+                return null;
+            } finally {
+                this.savingStatus = null;
             }
         },
 

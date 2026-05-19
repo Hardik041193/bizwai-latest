@@ -2,38 +2,23 @@
     <div :class="{ 'dark text-white-dark': store.semidark }">
         <nav class="sidebar fixed min-h-screen h-full top-0 bottom-0 w-[260px] shadow-[5px_0_25px_0_rgba(94,92,154,0.1)] z-50 transition-all duration-300">
             <div class="bg-white dark:bg-[#0e1726] h-full">
-                <div class="flex justify-between items-center px-4 py-3">
-                    <router-link to="/" class="main-logo flex items-center shrink-0">
-                        <img
-                            class="h-9 w-auto ml-[5px] flex-none object-contain"
-                            src="/assets/images/bizwai.png"
-                            alt="Bizwai"
-                        />
+                <div class="flex flex-col px-4 py-4">
+                    <router-link to="/" class="main-logo flex items-center shrink-0 mb-4">
+                        <div class="bg-blue-600 text-white rounded-lg p-2 w-10 h-10 flex items-center justify-center mr-3 flex-shrink-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chart-column w-6 h-6 text-white" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"></path><path d="M18 17V9"></path><path d="M13 17V5"></path><path d="M8 17v-3"></path></svg>
+                        </div>
+                        <div class="flex flex-col">
+                            <span class="font-bold text-base text-gray-900 dark:text-white">BizWai</span>
+                            <span class="text-xs font-medium text-gray-500 dark:text-gray-400">Finance Dashboard</span>
+                        </div>
                     </router-link>
-                    <a
-                        href="javascript:;"
-                        class="collapse-icon w-8 h-8 rounded-full flex items-center hover:bg-gray-500/10 dark:hover:bg-dark-light/10 dark:text-white-light transition duration-300 rtl:rotate-180 hover:text-primary"
-                        @click="store.toggleSidebar()"
-                    >
-                        <svg class="w-5 h-5 m-auto" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M13 19L7 12L13 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-                            <path
-                                opacity="0.5"
-                                d="M16.9998 19L10.9998 12L16.9998 5"
-                                stroke="currentColor"
-                                stroke-width="1.5"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            />
-                        </svg>
-                    </a>
                 </div>
                 <perfect-scrollbar
                     :options="{
                         swipeEasing: true,
                         wheelPropagation: false,
                     }"
-                    class="h-[calc(100vh-80px)] relative"
+                    class="h-[calc(100vh-140px)] relative"
                 >
                     <ul class="relative font-semibold space-y-0.5 p-4 py-0">
 
@@ -425,28 +410,36 @@
                                 <span>Administration</span>
                             </h2>
                             <li class="nav-item">
+                                <router-link to="/admin" class="group" @click="toggleMobileMenu">
+                                    <div class="flex items-center">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-layout-dashboard w-5 h-5" aria-hidden="true"><rect width="7" height="9" x="3" y="3" rx="1"></rect><rect width="7" height="5" x="14" y="3" rx="1"></rect><rect width="7" height="9" x="14" y="12" rx="1"></rect><rect width="7" height="5" x="3" y="16" rx="1"></rect></svg>
+                                        <span class="ltr:pl-3 rtl:pr-3 font-normal text-black text-base">Dashboard</span>
+                                    </div>
+                                </router-link>
+                            </li>
+                            <li class="nav-item">
                                 <router-link to="/admin/users" class="group" @click="toggleMobileMenu">
                                     <div class="flex items-center">
                                         <svg class="group-hover:!text-primary shrink-0" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                                             <path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.768-.231-1.48-.634-2.071M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.768.231-1.48.634-2.071M15 7a3 3 0 11-6 0 3 3 0 016 0z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                                         </svg>
-                                        <span class="ltr:pl-3 rtl:pr-3 text-black dark:text-[#506690] dark:group-hover:text-white-dark">Users</span>
+                                        <span class="ltr:pl-3 rtl:pr-3 font-normal text-black text-base">Users</span>
                                     </div>
                                 </router-link>
                             </li>
                         </template>
 
                         <!-- ── QuickBooks ── -->
-                        <h2 class="py-3 px-7 flex items-center uppercase font-extrabold bg-white-light/30 dark:bg-dark dark:bg-opacity-[0.08] -mx-4 mb-1">
+                        <!-- <h2 class="py-3 px-7 flex items-center uppercase font-extrabold bg-white-light/30 dark:bg-dark dark:bg-opacity-[0.08] -mx-4 mb-1">
                             <svg class="w-4 h-5 flex-none hidden" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
                                 <line x1="5" y1="12" x2="19" y2="12"></line>
                             </svg>
                             <span>QuickBooks</span>
-                        </h2>
+                        </h2> -->
 
                         <!-- Admin: full QB dashboard + connect button -->
                         <template v-if="authStore.isAdmin">
-                            <li class="nav-item">
+                            <!-- <li class="nav-item">
                                 <router-link to="/quickbooks/dashboard" class="group" @click="toggleMobileMenu">
                                     <div class="flex items-center">
                                         <svg class="group-hover:!text-primary shrink-0" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -457,8 +450,8 @@
                                         <span v-if="qbConnected" class="ltr:ml-auto rtl:mr-auto badge badge-outline-success text-xs px-1 py-0">Live</span>
                                     </div>
                                 </router-link>
-                            </li>
-                            <li class="nav-item">
+                            </li> -->
+                            <!-- <li class="nav-item">
                                 <router-link to="/quickbooks/connect" class="group" @click="toggleMobileMenu">
                                     <div class="flex items-center">
                                         <svg class="group-hover:!text-primary shrink-0" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -468,11 +461,20 @@
                                         <span class="ltr:pl-3 rtl:pr-3 text-black dark:text-[#506690] dark:group-hover:text-white-dark">Connect QBO</span>
                                     </div>
                                 </router-link>
-                            </li>
+                            </li> -->
                         </template>
 
                         <!-- Regular user: own QuickBooks data portal -->
                         <template v-else>
+                            <h2 class="py-3 px-7 flex items-center uppercase font-extrabold bg-white-light/30 dark:bg-dark dark:bg-opacity-[0.08] -mx-4 mb-1"><svg class="w-4 h-5 flex-none hidden" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg><span>Menu</span></h2>
+                            <li class="nav-item">
+                                <router-link to="/" class="group" @click="toggleMobileMenu">
+                                    <div class="flex items-center">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-layout-dashboard w-5 h-5" aria-hidden="true" x-file-name="Layout" x-line-number="97" x-column="16" x-component="Icon" x-id="Layout_97_16" x-dynamic="true" x-source-type="static-imported" x-source-var="navItems" x-source-file-abs="/app/frontend/src/components/Layout.jsx" x-source-line="21" x-source-editable="true" x-array-var="navItems" x-array-line="21" x-array-item-param="item"><rect width="7" height="9" x="3" y="3" rx="1"></rect><rect width="7" height="5" x="14" y="3" rx="1"></rect><rect width="7" height="9" x="14" y="12" rx="1"></rect><rect width="7" height="5" x="3" y="16" rx="1"></rect></svg>
+                                        <span class="ltr:pl-3 rtl:pr-3 font-normal text-black text-base">Dashboard</span>
+                                    </div>
+                                </router-link>
+                            </li>
                             <li class="nav-item">
                                 <router-link to="/quickbooks/portal" class="group" @click="toggleMobileMenu">
                                     <div class="flex items-center">
@@ -482,6 +484,31 @@
                                         </svg>
                                         <span class="ltr:pl-3 rtl:pr-3 text-black dark:text-[#506690] dark:group-hover:text-white-dark">QuickBooks Data</span>
                                         <span v-if="qbConnected" class="ltr:ml-auto rtl:mr-auto badge badge-outline-success text-xs px-1 py-0">Live</span>
+                                        <span class="ltr:pl-3 rtl:pr-3 font-normal text-black text-base">My Invoices</span>
+                                    </div>
+                                </router-link>
+                            </li>
+                            <li class="nav-item">
+                                <router-link to="" class="group" @click="toggleMobileMenu">
+                                    <div class="flex items-center">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-message-square w-5 h-5" aria-hidden="true" x-file-name="Layout" x-line-number="97" x-column="16" x-component="Icon" x-id="Layout_97_16" x-dynamic="true" x-source-type="static-imported" x-source-var="navItems" x-source-file-abs="/app/frontend/src/components/Layout.jsx" x-source-line="21" x-source-editable="true" x-array-var="navItems" x-array-line="21" x-array-item-param="item"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                                        <span class="ltr:pl-3 rtl:pr-3 font-normal text-black text-base">Chat AI</span>
+                                    </div>
+                                </router-link>
+                            </li>
+                            <li class="nav-item">
+                                <router-link to="" class="group" @click="toggleMobileMenu">
+                                    <div class="flex items-center">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-mail w-5 h-5" aria-hidden="true" x-file-name="Layout" x-line-number="97" x-column="16" x-component="Icon" x-id="Layout_97_16" x-dynamic="true" x-source-type="static-imported" x-source-var="navItems" x-source-file-abs="/app/frontend/src/components/Layout.jsx" x-source-line="21" x-source-editable="true" x-array-var="navItems" x-array-line="21" x-array-item-param="item"><path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7"></path><rect x="2" y="4" width="20" height="16" rx="2"></rect></svg>
+                                        <span class="ltr:pl-3 rtl:pr-3 font-normal text-black text-base">Contact Us</span>
+                                    </div>
+                                </router-link>
+                            </li>
+                            <li class="nav-item">
+                                <router-link to="" class="group" @click="toggleMobileMenu">
+                                    <div class="flex items-center">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-settings w-5 h-5" aria-hidden="true" x-file-name="Layout" x-line-number="97" x-column="16" x-component="Icon" x-id="Layout_97_16" x-dynamic="true" x-source-type="static-imported" x-source-var="navItems" x-source-file-abs="/app/frontend/src/components/Layout.jsx" x-source-line="21" x-source-editable="true" x-array-var="navItems" x-array-line="21" x-array-item-param="item"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                        <span class="ltr:pl-3 rtl:pr-3 font-normal text-black text-base">Settings</span>
                                     </div>
                                 </router-link>
                             </li>

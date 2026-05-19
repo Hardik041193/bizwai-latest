@@ -12,7 +12,8 @@
     <link rel="icon" type="image/png" href="{{ asset('favicon.png') }}">
     <link rel="apple-touch-icon" href="{{ asset('favicon.png') }}">
 
-    <link href="https://fonts.googleapis.com/css?family=Nunito:400,600,700" rel="stylesheet">
+    <link href="https://fonts.google.com/share?selection.family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800" rel="stylesheet">
+    {{-- <link href="https://fonts.googleapis.com/css?family=Nunito:400,600,700" rel="stylesheet"> --}}
     @vite(['resources/js/src/main.ts'])
 </head>
 
