@@ -84,9 +84,9 @@
                             <th>Contact</th>
                             <th>Company</th>
                             <th>Verification</th>
+                            <th>QBO Status</th>
                             <th>Joined</th>
                             <th>Status</th>
-                            <th>QBO Status</th>
                             <th class="text-center w-24">Action</th>
                         </tr>
                     </thead>
