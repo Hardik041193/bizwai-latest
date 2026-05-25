@@ -92,8 +92,11 @@ export interface Paginated<T> {
     total: number;
 }
 
+const STATUS_CACHE_MS = 30_000;
+
 interface QBState {
     status: QBStatus | null;
+    statusFetchedAt: number | null;
     summary: QBSummary | null;
     accounts: Paginated<QBAccount> | null;
     customers: Paginated<QBCustomer> | null;
@@ -124,12 +127,22 @@ export const useQuickBooksStore = defineStore('quickbooks', {
     },
 
     actions: {
-        async fetchStatus(): Promise<void> {
+        async fetchStatus(force = false): Promise<void> {
+            if (
+                ! force
+                && this.statusFetchedAt
+                && Date.now() - this.statusFetchedAt < STATUS_CACHE_MS
+            ) {
+                return;
+            }
+
             try {
                 const { data } = await axios.get('/api/quickbooks/status');
                 this.status = data;
+                this.statusFetchedAt = Date.now();
             } catch (err: any) {
                 this.status = { connected: false };
+                this.statusFetchedAt = Date.now();
             }
         },
 
@@ -221,6 +234,7 @@ export const useQuickBooksStore = defineStore('quickbooks', {
                 await axios.post('/api/quickbooks/disconnect');
                 this.$reset();
                 this.status = { connected: false };
+                this.statusFetchedAt = Date.now();
             } catch (err: any) {
                 this.error = err.response?.data?.message ?? 'Disconnect failed.';
                 throw err;

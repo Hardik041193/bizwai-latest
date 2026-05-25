@@ -7,6 +7,7 @@ use App\Models\QuickBooksCustomer;
 use App\Models\QuickBooksInvoice;
 use App\Models\QuickBooksToken;
 use App\Models\QuickBooksTransaction;
+use App\Models\User;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -100,16 +101,28 @@ class QuickBooksService
         $accessExpiresIn  = (int) ($accessToken->getAccessTokenExpiresAt()  ?: 3600);
         $refreshExpiresIn = (int) ($accessToken->getRefreshTokenExpiresAt() ?: 8726400);
 
-        return QuickBooksToken::updateOrCreate(
-            ['user_id' => $userId],
-            [
-                'realm_id'                  => $realmId,
-                'access_token'              => $accessToken->getAccessToken(),
-                'refresh_token'             => $accessToken->getRefreshToken(),
-                'token_expires_at'          => now()->addSeconds($accessExpiresIn),
-                'refresh_token_expires_at'  => now()->addSeconds($refreshExpiresIn),
-            ]
-        );
+        return DB::transaction(function () use (
+            $userId,
+            $realmId,
+            $accessToken,
+            $accessExpiresIn,
+            $refreshExpiresIn
+        ) {
+            $token = QuickBooksToken::updateOrCreate(
+                ['user_id' => $userId],
+                [
+                    'realm_id'                  => $realmId,
+                    'access_token'              => $accessToken->getAccessToken(),
+                    'refresh_token'             => $accessToken->getRefreshToken(),
+                    'token_expires_at'          => now()->addSeconds($accessExpiresIn),
+                    'refresh_token_expires_at'  => now()->addSeconds($refreshExpiresIn),
+                ]
+            );
+
+            User::find($userId)?->markQuickBooksConnected();
+
+            return $token;
+        });
     }
 
     /**
@@ -185,6 +198,8 @@ class QuickBooksService
         $token = QuickBooksToken::where('user_id', $userId)->first();
 
         if (! $token) {
+            User::find($userId)?->markQuickBooksDisconnected();
+
             return;
         }
 
@@ -211,6 +226,8 @@ class QuickBooksService
         QuickBooksInvoice::where('realm_id', $realmId)->delete();
         QuickBooksTransaction::where('realm_id', $realmId)->delete();
 
+        User::find($userId)?->markQuickBooksDisconnected();
+
         Log::info('QuickBooks: synced data purged after disconnect.', [
             'user_id'  => $userId,
             'realm_id' => $realmId,
@@ -235,12 +252,18 @@ class QuickBooksService
             return 0;
         }
 
+        $companyName = $company->CompanyName ?? $company->LegalName ?? null;
+
         $token->update([
-            'company_name'  => $company->CompanyName ?? $company->LegalName ?? null,
+            'company_name'  => $companyName,
             'legal_name'    => $company->LegalName ?? null,
             'company_email' => $company->Email->Address ?? null,
             'country'       => $company->Country ?? null,
         ]);
+
+        if ($companyName && $token->user_id) {
+            User::find($token->user_id)?->markQuickBooksConnected($companyName);
+        }
 
         return 1;
     }

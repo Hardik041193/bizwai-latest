@@ -34,11 +34,18 @@
 </template>
 
 <script lang="ts" setup>
+import { onMounted } from 'vue';
 import { useMeta } from '../../composables/use-meta';
 import { useAuthStore } from '../../stores/auth';
+import { useQuickBooksStore } from '../../stores/quickbooks';
 
 useMeta({ title: 'QuickBooks Connected' });
 
 const authStore = useAuthStore();
+const qbStore = useQuickBooksStore();
 const dashboardPath = authStore.isAdmin ? '/quickbooks/dashboard' : '/quickbooks/portal';
+
+onMounted(() => {
+    qbStore.fetchStatus(true);
+});
 </script>
