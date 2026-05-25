@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/auth';
 import appSetting from '@/app-setting';
 
 import HomeView from '../views/index.vue';
+import ContactIndex from '@/views/pages/contact/index.vue';
 
 const routes: RouteRecordRaw[] = [
     // ── Root redirect (handled in beforeEach, component is a placeholder) ──
@@ -548,6 +549,13 @@ const routes: RouteRecordRaw[] = [
         name: 'maintenence',
         component: () => import(/* webpackChunkName: "pages-maintenence" */ '../views/pages/maintenence.vue'),
         meta: { layout: 'auth' },
+    },
+    // New /contact-us — with sidebar (no layout: 'auth')
+    {
+        path: '/contact-us',
+        name: 'contact-us',
+        component: () => import('../views/pages/contact/index.vue'),
+        meta: { requiresAuth: true },   // ← NO layout:'auth' = sidebar shows
     },
 
     // authentication

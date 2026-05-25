@@ -221,7 +221,7 @@
                                 <input type="checkbox" class="w-4 h-4 rounded border-gray-300 text-primary accent-primary" />
                                 <span class="text-sm text-gray-600">Remember me</span>
                             </label>
-                            <a href="javascript:" class="text-sm text-primary font-medium hover:underline">Forgot password?</a>
+                            <!-- <a href="javascript:" class="text-sm text-primary font-medium hover:underline">Forgot password?</a> -->
                         </div>
 
                         <!-- Submit -->
