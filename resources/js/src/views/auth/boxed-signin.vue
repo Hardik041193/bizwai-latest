@@ -114,6 +114,9 @@
                         </div>
                     </div>
 
+                    <div class="flex items-center justify-between">
+                        <a href="/auth/forgot-password" class="forgot-link">Forgot password?</a>
+                    </div>
                     <!-- Submit -->
                     <button
                         type="submit"

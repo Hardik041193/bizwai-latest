@@ -4,6 +4,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\QuickBooksController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\ContactController;
 use Illuminate\Support\Facades\Route;
 
 // ── Public auth ──
@@ -42,6 +43,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/{user}/approve', [UserController::class, 'approve'])->name('approve');
         Route::patch('/{user}/revoke',  [UserController::class, 'revoke'])->name('revoke');
     });
+
+    Route::get('/contact-us',  [ContactController::class, 'index'])->name('contact.index');
+    Route::post('/contact-us', [ContactController::class, 'store'])->name('contact.store');
 
     // ── Profile ──
     Route::prefix('profile')->name('profile.')->group(function () {
