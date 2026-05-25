@@ -482,9 +482,9 @@
                                             <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke="currentColor" stroke-width="1.5"/>
                                             <path opacity="0.5" d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                                         </svg>
-                                        <span class="ltr:pl-3 rtl:pr-3 text-black dark:text-[#506690] dark:group-hover:text-white-dark">QuickBooks Data</span>
+                                        <span class="ltr:pl-3 rtl:pr-3 font-normal text-black text-base">QuickBooks Data</span>
                                         <span v-if="qbConnected" class="ltr:ml-auto rtl:mr-auto badge badge-outline-success text-xs px-1 py-0">Live</span>
-                                        <span class="ltr:pl-3 rtl:pr-3 font-normal text-black text-base">My Invoices</span>
+                                        <!-- <span class="ltr:pl-3 rtl:pr-3 font-normal text-black text-base">My Invoices</span> -->
                                     </div>
                                 </router-link>
                             </li>
@@ -497,21 +497,26 @@
                                 </router-link>
                             </li>
                             <li class="nav-item">
-                                <router-link to="" class="group" @click="toggleMobileMenu">
+                                <router-link to="/contact-us" class="group" @click="toggleMobileMenu">
                                     <div class="flex items-center">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-mail w-5 h-5" aria-hidden="true" x-file-name="Layout" x-line-number="97" x-column="16" x-component="Icon" x-id="Layout_97_16" x-dynamic="true" x-source-type="static-imported" x-source-var="navItems" x-source-file-abs="/app/frontend/src/components/Layout.jsx" x-source-line="21" x-source-editable="true" x-array-var="navItems" x-array-line="21" x-array-item-param="item"><path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7"></path><rect x="2" y="4" width="20" height="16" rx="2"></rect></svg>
+                                        <svg class="group-hover:!text-primary shrink-0" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke="currentColor" stroke-width="1.5"/>
+                                            <path opacity="0.5" d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                                        </svg>
                                         <span class="ltr:pl-3 rtl:pr-3 font-normal text-black text-base">Contact Us</span>
+                                        
+                                        <!-- <span class="ltr:pl-3 rtl:pr-3 font-normal text-black text-base">My Invoices</span> -->
                                     </div>
                                 </router-link>
                             </li>
-                            <li class="nav-item">
+                            <!-- <li class="nav-item">
                                 <router-link to="" class="group" @click="toggleMobileMenu">
                                     <div class="flex items-center">
                                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-settings w-5 h-5" aria-hidden="true" x-file-name="Layout" x-line-number="97" x-column="16" x-component="Icon" x-id="Layout_97_16" x-dynamic="true" x-source-type="static-imported" x-source-var="navItems" x-source-file-abs="/app/frontend/src/components/Layout.jsx" x-source-line="21" x-source-editable="true" x-array-var="navItems" x-array-line="21" x-array-item-param="item"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                                         <span class="ltr:pl-3 rtl:pr-3 font-normal text-black text-base">Settings</span>
                                     </div>
                                 </router-link>
-                            </li>
+                            </li> -->
                         </template>
 
                         <!-- ═══════════════════════════════════════════════════════════════

@@ -91,7 +91,7 @@
                 <div
                     class="sm:flex-1 ltr:sm:ml-0 ltr:ml-auto sm:rtl:mr-0 rtl:mr-auto flex items-center space-x-1.5 lg:space-x-2 rtl:space-x-reverse dark:text-[#d0d2d6]"
                 >
-                    <div class="sm:ltr:mr-auto sm:rtl:ml-auto">
+                    <div class="sm:ltr:mr-auto sm:rtl:ml-auto w-1/3">
                         <form
                             class="sm:relative absolute inset-x-0 sm:top-0 top-1/2 sm:translate-y-0 -translate-y-1/2 sm:mx-0 mx-4 z-10 sm:block hidden"
                             :class="{ '!block': search }"
@@ -100,8 +100,8 @@
                             <div class="relative">
                                 <input
                                     type="text"
-                                    class="form-input ltr:pl-9 rtl:pr-9 ltr:sm:pr-4 rtl:sm:pl-4 ltr:pr-9 rtl:pl-9 peer sm:bg-transparent bg-gray-100 placeholder:tracking-widest"
-                                    placeholder="Search..."
+                                    class="w-full h-10 pl-10 pr-4 rounded-lg bg-gray-50 border border-gray-200 text-sm focus:outline-none focus:border-[#1877F2] focus:bg-white transition-colors"
+                                    placeholder="Search invoices, customers..."
                                 />
                                 <button type="button" class="absolute w-9 h-9 inset-0 ltr:right-auto rtl:left-auto appearance-none peer-focus:text-primary">
                                     <svg class="mx-auto" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -498,7 +498,7 @@
                                             Profile
                                         </router-link>
                                     </li>
-                                    <li>
+                                    <!-- <li>
                                         <router-link to="/apps/mailbox" class="dark:hover:text-white" @click="close()">
                                             <svg
                                                 class="w-4.5 h-4.5 ltr:mr-2 rtl:ml-2 shrink-0"
@@ -524,8 +524,8 @@
 
                                             Inbox
                                         </router-link>
-                                    </li>
-                                    <li>
+                                    </li> -->
+                                    <!-- <li>
                                         <router-link to="/auth/boxed-lockscreen" class="dark:hover:text-white" @click="close()">
                                             <svg
                                                 class="w-4.5 h-4.5 ltr:mr-2 rtl:ml-2 shrink-0"
@@ -565,7 +565,7 @@
 
                                             Lock Screen
                                         </router-link>
-                                    </li>
+                                    </li> -->
                                     <li class="border-t border-white-light dark:border-white-light/10">
                                         <button type="button" class="text-danger !py-3 w-full" @click="handleLogout(); close()">
                                             <svg

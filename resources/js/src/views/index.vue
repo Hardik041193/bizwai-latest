@@ -283,7 +283,7 @@
                 </div>
             </div>
 
-            <div class="grid sm:grid-cols-2 xl:grid-cols-3 gap-6 mb-6">
+            <!-- <div class="grid sm:grid-cols-2 xl:grid-cols-3 gap-6 mb-6">
                 <div class="panel h-full sm:col-span-2 xl:col-span-1 pb-0">
                     <h5 class="font-semibold text-lg dark:text-white-light mb-5">Recent Activities</h5>
 
@@ -692,9 +692,9 @@
                         </div>
                     </div>
                 </div>
-            </div>
+            </div> -->
 
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div class="panel h-full w-full">
                     <div class="flex items-center justify-between mb-5">
                         <h5 class="font-semibold text-lg dark:text-white-light">Recent Orders</h5>
@@ -1002,14 +1002,14 @@
                         </table>
                     </div>
                 </div>
-            </div>
+            </div> -->
         </div>
     </div>
 </template>
 <script lang="ts" setup>
     import { ref, computed } from 'vue';
     import apexchart from 'vue3-apexcharts';
-
+    
     import { useAppStore } from '@/stores/index';
     const store = useAppStore();
 
