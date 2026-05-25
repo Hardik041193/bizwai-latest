@@ -42,7 +42,15 @@ class RouteServiceProvider extends ServiceProvider
     protected function configureRateLimiting(): void
     {
         RateLimiter::for('api', function (Request $request) {
-            return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
+            // Authenticated SPA users hit many read endpoints (sidebar status, QB dashboard).
+            return $request->user()
+                ? Limit::perMinute(120)->by($request->user()->id)
+                : Limit::perMinute(60)->by($request->ip());
+        });
+
+        // OAuth connect must stay available even when other API calls are busy.
+        RateLimiter::for('quickbooks-connect', function (Request $request) {
+            return Limit::perMinute(15)->by($request->user()?->id ?: $request->ip());
         });
     }
 }

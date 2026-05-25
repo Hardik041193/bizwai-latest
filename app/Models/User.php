@@ -13,6 +13,10 @@ class User extends Authenticatable implements MustVerifyEmail
 {
     use HasApiTokens, HasFactory, Notifiable;
 
+    public const QBO_STATUS_DISCONNECTED = 0;
+
+    public const QBO_STATUS_CONNECTED = 1;
+
     protected $fillable = [
         'name', 'email', 'password', 'role',
         'phone', 'job_title', 'address', 'bio', 'avatar', 'company_name', 'qbo_status',
@@ -23,6 +27,7 @@ class User extends Authenticatable implements MustVerifyEmail
     protected $casts = [
         'email_verified_at' => 'datetime',
         'password'          => 'hashed',
+        'qbo_status'        => 'integer',
     ];
 
     public function isAdmin(): bool
@@ -82,6 +87,29 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function hasQuickBooksConnected(): bool
     {
-        return $this->quickBooksToken()->exists();
+        return $this->qbo_status === self::QBO_STATUS_CONNECTED
+            && $this->quickBooksToken()->exists();
+    }
+
+    /**
+     * Mark the user as connected to QuickBooks (denormalized for admin reporting).
+     */
+    public function markQuickBooksConnected(?string $companyName = null): void
+    {
+        $attributes = ['qbo_status' => self::QBO_STATUS_CONNECTED];
+
+        if ($companyName !== null) {
+            $attributes['company_name'] = $companyName;
+        }
+
+        $this->update($attributes);
+    }
+
+    /**
+     * Mark the user as disconnected from QuickBooks.
+     */
+    public function markQuickBooksDisconnected(): void
+    {
+        $this->update(['qbo_status' => self::QBO_STATUS_DISCONNECTED]);
     }
 }
