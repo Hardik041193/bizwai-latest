@@ -3,6 +3,11 @@ import axios from 'axios';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
+export interface QBSelectedClient {
+    qbo_id: string;
+    display_name: string;
+}
+
 export interface QBStatus {
     connected: boolean;
     role?: 'admin' | 'user';
@@ -11,6 +16,8 @@ export interface QBStatus {
     legal_name?: string | null;
     company_email?: string | null;
     country?: string | null;
+    needs_client_selection?: boolean;
+    selected_client?: QBSelectedClient | null;
     token_expires_at?: string;
     refresh_token_expires_at?: string;
     access_token_expired?: boolean;
@@ -112,6 +119,7 @@ interface QBState {
 export const useQuickBooksStore = defineStore('quickbooks', {
     state: (): QBState => ({
         status: null,
+        statusFetchedAt: null,
         summary: null,
         accounts: null,
         customers: null,
@@ -124,6 +132,8 @@ export const useQuickBooksStore = defineStore('quickbooks', {
 
     getters: {
         isConnected: (state): boolean => state.status?.connected === true,
+        needsClientSelection: (state): boolean =>
+            state.status?.connected === true && state.status?.needs_client_selection === true,
     },
 
     actions: {
@@ -149,6 +159,29 @@ export const useQuickBooksStore = defineStore('quickbooks', {
         async getConnectUrl(): Promise<string> {
             const { data } = await axios.get('/api/quickbooks/connect');
             return data.url as string;
+        },
+
+        async fetchSelectionClients(search?: string): Promise<{
+            company_name: string | null;
+            realm_id: string;
+            clients: Array<{ qbo_id: string; display_name: string; company_name: string | null }>;
+        }> {
+            const { data } = await axios.get('/api/quickbooks/selection/clients', {
+                params: search ? { search } : {},
+            });
+            return data;
+        },
+
+        async saveClientSelection(qboCustomerId: string, displayName: string): Promise<void> {
+            await axios.post('/api/quickbooks/selection/client', {
+                qbo_customer_id: qboCustomerId,
+                display_name: displayName,
+            });
+        },
+
+        async clearClientSelection(): Promise<void> {
+            await axios.delete('/api/quickbooks/selection/client');
+            await this.fetchStatus(true);
         },
 
         async fetchSummary(): Promise<void> {

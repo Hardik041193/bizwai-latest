@@ -416,7 +416,13 @@ function statusBadge(status: string): string {
 
 // ── Mount ─────────────────────────────────────────────────────────────────
 onMounted(async () => {
-    await qbStore.fetchStatus();
+    await qbStore.fetchStatus(true);
+
+    if (qbStore.needsClientSelection) {
+        router.replace({ name: 'quickbooks-select-client' });
+        return;
+    }
+
     if (qbStore.isConnected) {
         await qbStore.fetchSummary();
         await loadInvoices();

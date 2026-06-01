@@ -16,6 +16,9 @@ class QuickBooksToken extends Model
         'legal_name',
         'company_email',
         'country',
+        'selected_client_qbo_id',
+        'selected_client_name',
+        'client_selected_at',
         'access_token',
         'refresh_token',
         'token_expires_at',
@@ -27,7 +30,14 @@ class QuickBooksToken extends Model
         'refresh_token'             => 'encrypted',
         'token_expires_at'          => 'datetime',
         'refresh_token_expires_at'  => 'datetime',
+        'client_selected_at'        => 'datetime',
     ];
+
+    public function hasSelectedClient(): bool
+    {
+        return $this->client_selected_at !== null
+            && $this->selected_client_qbo_id !== null;
+    }
 
     protected $hidden = [
         'access_token',
@@ -37,17 +47,6 @@ class QuickBooksToken extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
-    }
-
-    /**
-     * Return the single "company" QuickBooks token — owned by any admin user.
-     * Regular (non-admin) users see data through this shared company connection.
-     */
-    public static function getCompanyToken(): ?self
-    {
-        return self::whereHas('user', fn ($q) => $q->where('role', 'admin'))
-            ->latest()
-            ->first();
     }
 
     public function isAccessTokenExpired(): bool

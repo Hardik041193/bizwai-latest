@@ -201,8 +201,10 @@
                                 />
                                 <button
                                     type="button"
-                                    class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-gray-400 hover:text-gray-600 transition"
-                                    @click="showPassword = !showPassword"
+                                    tabindex="-1"
+                                    class="absolute inset-y-0 right-0 z-10 flex items-center pr-3.5 text-gray-400 hover:text-gray-600 transition cursor-pointer"
+                                    :aria-label="showPassword ? 'Hide password' : 'Show password'"
+                                    @click.prevent.stop="showPassword = !showPassword"
                                 >
                                     <svg v-if="!showPassword" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>

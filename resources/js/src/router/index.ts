@@ -24,6 +24,12 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true, requiresAdmin: true },
     },
 
+    // ── QuickBooks (demo-style entry: /quickbooks → portal or connect flow) ──
+    {
+        path: '/quickbooks',
+        name: 'quickbooks',
+        redirect: { name: 'quickbooks-portal' },
+    },
     // ── QuickBooks (admin management) ──
     {
         path: '/quickbooks/connect',
@@ -35,6 +41,12 @@ const routes: RouteRecordRaw[] = [
         path: '/quickbooks/connected',
         name: 'quickbooks-connected',
         component: () => import(/* webpackChunkName: "qb-connected" */ '../views/quickbooks/connected.vue'),
+        meta: { requiresAuth: true },
+    },
+    {
+        path: '/quickbooks/select-client',
+        name: 'quickbooks-select-client',
+        component: () => import(/* webpackChunkName: "qb-select-client" */ '../views/quickbooks/select-client.vue'),
         meta: { requiresAuth: true },
     },
     {

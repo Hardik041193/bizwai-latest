@@ -68,6 +68,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/disconnect', [QuickBooksController::class, 'disconnect'])->name('disconnect')->middleware('throttle:10,1');
         Route::post('/sync',       [QuickBooksController::class, 'sync'])->name('sync')->middleware('throttle:10,1');
 
+        Route::get('/selection/clients', [QuickBooksController::class, 'selectionClients'])->name('selection.clients');
+        Route::post('/selection/client', [QuickBooksController::class, 'saveClientSelection'])->name('selection.save');
+        Route::delete('/selection/client', [QuickBooksController::class, 'clearClientSelection'])->name('selection.clear');
+
         // Read endpoints — covered by the global api limiter (no extra per-route throttle).
         Route::get('/status',       [QuickBooksController::class, 'status'])->name('status');
         Route::get('/summary',      [QuickBooksController::class, 'summary'])->name('summary');

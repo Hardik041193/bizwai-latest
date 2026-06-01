@@ -82,19 +82,104 @@ class QuickBooksController extends Controller
             return redirect("{$frontendBase}/quickbooks/error?message={$message}");
         }
 
+        // Quick sync of company name only; full sync runs after client selection.
         try {
             $token = QuickBooksToken::where('user_id', $userId)->first();
             if ($token) {
-                dispatch(new SyncQuickBooksDataJob($token->id));
+                $this->quickBooks->syncCompanyInfo($token);
             }
         } catch (\Throwable $e) {
-            Log::warning('QuickBooks initial sync failed after connect (non-fatal).', [
+            Log::warning('QuickBooks company info sync after connect (non-fatal).', [
                 'user_id' => $userId,
                 'error'   => $e->getMessage(),
             ]);
         }
 
-        return redirect("{$frontendBase}/quickbooks/connected");
+        return redirect("{$frontendBase}/quickbooks/select-client");
+    }
+
+    /**
+     * List QBO customers for the post-OAuth client picker (live from QuickBooks).
+     */
+    public function selectionClients(Request $request): JsonResponse
+    {
+        $request->validate([
+            'search' => 'nullable|string|max:100',
+        ]);
+
+        $token = $this->resolveToken($request);
+
+        if (! $token) {
+            return response()->json(['message' => 'QuickBooks is not connected.'], 422);
+        }
+
+        try {
+            $clients = $this->quickBooks->fetchCustomersForSelection(
+                $token,
+                $request->input('search')
+            );
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'company_name' => $token->company_name ?? $token->legal_name,
+            'realm_id'     => $token->realm_id,
+            'clients'      => $clients,
+        ]);
+    }
+
+    /**
+     * Save the client chosen on the selection screen and start data sync.
+     */
+    public function saveClientSelection(Request $request): JsonResponse
+    {
+        $request->validate([
+            'qbo_customer_id' => 'required|string|max:50',
+            'display_name'    => 'required|string|max:255',
+        ]);
+
+        $token = $this->resolveToken($request);
+
+        if (! $token) {
+            return response()->json(['message' => 'QuickBooks is not connected.'], 422);
+        }
+
+        $token = $this->quickBooks->selectClient(
+            $token,
+            $request->input('qbo_customer_id'),
+            $request->input('display_name')
+        );
+
+        dispatch(new SyncQuickBooksDataJob($token->id));
+
+        return response()->json([
+            'message' => 'Client selected successfully.',
+            'selected_client' => [
+                'qbo_id'       => $token->selected_client_qbo_id,
+                'display_name' => $token->selected_client_name,
+            ],
+        ]);
+    }
+
+    /**
+     * Clear client selection so the user can pick a different client.
+     */
+    public function clearClientSelection(Request $request): JsonResponse
+    {
+        $token = $this->resolveToken($request);
+
+        if (! $token) {
+            return response()->json(['message' => 'QuickBooks is not connected.'], 422);
+        }
+
+        $token->update([
+            'selected_client_qbo_id' => null,
+            'selected_client_name'   => null,
+            'client_selected_at'     => null,
+        ]);
+
+        return response()->json(['message' => 'Client selection cleared.']);
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -126,6 +211,11 @@ class QuickBooksController extends Controller
             'legal_name'               => $token->legal_name,
             'company_email'            => $token->company_email,
             'country'                  => $token->country,
+            'needs_client_selection'   => ! $token->hasSelectedClient(),
+            'selected_client'          => $token->hasSelectedClient() ? [
+                'qbo_id'       => $token->selected_client_qbo_id,
+                'display_name' => $token->selected_client_name,
+            ] : null,
             'token_expires_at'         => $token->token_expires_at?->toIso8601String(),
             'refresh_token_expires_at' => $token->refresh_token_expires_at?->toIso8601String(),
             'access_token_expired'     => $token->isAccessTokenExpired(),
@@ -177,6 +267,27 @@ class QuickBooksController extends Controller
         return $request->user()->quickBooksToken;
     }
 
+    private function applySelectedClientToInvoices($query, QuickBooksToken $token): void
+    {
+        if ($token->hasSelectedClient()) {
+            $query->where('customer_name', $token->selected_client_name);
+        }
+    }
+
+    private function applySelectedClientToCustomers($query, QuickBooksToken $token): void
+    {
+        if (! $token->hasSelectedClient()) {
+            return;
+        }
+
+        $name = $token->selected_client_name;
+
+        $query->where(function ($q) use ($name) {
+            $q->where('display_name', $name)
+                ->orWhere('company_name', $name);
+        });
+    }
+
     /**
      * Chart of Accounts — admin only.
      * Accounts are internal business data; regular users should not see them.
@@ -220,7 +331,9 @@ class QuickBooksController extends Controller
             return response()->json(['message' => 'QuickBooks is not connected.'], 422);
         }
 
-        $customers = QuickBooksCustomer::where('realm_id', $token->realm_id)
+        $customers = QuickBooksCustomer::where('realm_id', $token->realm_id);
+        $this->applySelectedClientToCustomers($customers, $token);
+        $customers
             ->when($request->filled('search'), function ($q) use ($request) {
                 $term = '%' . $request->search . '%';
                 $q->where(function ($q2) use ($term) {
@@ -258,7 +371,9 @@ class QuickBooksController extends Controller
             return response()->json(['message' => 'QuickBooks is not connected.'], 422);
         }
 
-        $invoices = QuickBooksInvoice::where('realm_id', $token->realm_id)
+        $invoices = QuickBooksInvoice::where('realm_id', $token->realm_id);
+        $this->applySelectedClientToInvoices($invoices, $token);
+        $invoices
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->status))
             ->when($request->filled('customer'), fn ($q) => $q->where('customer_name', 'like', '%' . $request->customer . '%'))
             ->when($request->filled('from'), fn ($q) => $q->whereDate('txn_date', '>=', $request->from))
@@ -318,7 +433,12 @@ class QuickBooksController extends Controller
         $realmId = $token->realm_id;
 
         $invoiceQuery = QuickBooksInvoice::where('realm_id', $realmId);
-        $txnQuery     = QuickBooksTransaction::where('realm_id', $realmId);
+        $this->applySelectedClientToInvoices($invoiceQuery, $token);
+
+        $txnQuery = QuickBooksTransaction::where('realm_id', $realmId);
+
+        $customerCountQuery = QuickBooksCustomer::where('realm_id', $realmId);
+        $this->applySelectedClientToCustomers($customerCountQuery, $token);
 
         $totalRevenue       = (clone $invoiceQuery)->where('status', 'Paid')->sum('total_amount');
         $outstandingBalance = (clone $invoiceQuery)->whereIn('status', ['Open', 'Overdue'])->sum('balance');
@@ -332,7 +452,11 @@ class QuickBooksController extends Controller
             'total_expenses'      => (float) $totalExpenses,
             'overdue_invoices'    => $overdueCount,
             'total_invoices'      => (clone $invoiceQuery)->count(),
-            'total_customers'     => QuickBooksCustomer::where('realm_id', $realmId)->count(),
+            'total_customers'     => (clone $customerCountQuery)->count(),
+            'selected_client'     => $token->hasSelectedClient() ? [
+                'qbo_id'       => $token->selected_client_qbo_id,
+                'display_name' => $token->selected_client_name,
+            ] : null,
             'invoice_total'       => (float) $invoiceTotal,
             'last_synced_at'      => QuickBooksInvoice::where('realm_id', $realmId)->max('synced_at'),
             'company'             => [

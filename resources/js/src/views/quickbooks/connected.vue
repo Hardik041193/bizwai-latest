@@ -15,18 +15,18 @@
                 Your QuickBooks account has been linked successfully.
             </p>
             <p class="text-white-dark/50 text-sm mb-8">
-                We're syncing your data in the background. It will be ready in a few moments.
+                Next, choose which QuickBooks client you want to work with in Bizwai.
             </p>
 
             <div class="flex gap-3 justify-center">
-                <router-link :to="dashboardPath" class="btn btn-success gap-2">
+                <router-link to="/quickbooks/select-client" class="btn btn-success gap-2">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
                     </svg>
-                    View Dashboard
+                    Select Client →
                 </router-link>
-                <router-link to="/" class="btn btn-outline-primary">
-                    Back to Home
+                <router-link :to="dashboardPath" class="btn btn-outline-primary">
+                    Skip for now
                 </router-link>
             </div>
         </div>
@@ -35,6 +35,7 @@
 
 <script lang="ts" setup>
 import { onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import { useMeta } from '../../composables/use-meta';
 import { useAuthStore } from '../../stores/auth';
 import { useQuickBooksStore } from '../../stores/quickbooks';
@@ -43,9 +44,17 @@ useMeta({ title: 'QuickBooks Connected' });
 
 const authStore = useAuthStore();
 const qbStore = useQuickBooksStore();
+const router = useRouter();
 const dashboardPath = authStore.isAdmin ? '/quickbooks/dashboard' : '/quickbooks/portal';
 
-onMounted(() => {
-    qbStore.fetchStatus(true);
+onMounted(async () => {
+    await qbStore.fetchStatus(true);
+
+    if (qbStore.needsClientSelection) {
+        router.replace({ name: 'quickbooks-select-client' });
+        return;
+    }
+
+    router.replace(dashboardPath);
 });
 </script>

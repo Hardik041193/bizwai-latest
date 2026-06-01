@@ -116,6 +116,9 @@ class QuickBooksService
                     'refresh_token'             => $accessToken->getRefreshToken(),
                     'token_expires_at'          => now()->addSeconds($accessExpiresIn),
                     'refresh_token_expires_at'  => now()->addSeconds($refreshExpiresIn),
+                    'selected_client_qbo_id'    => null,
+                    'selected_client_name'      => null,
+                    'client_selected_at'          => null,
                 ]
             );
 
@@ -446,6 +449,63 @@ class QuickBooksService
             'invoices'     => $this->syncInvoices($token),
             'transactions' => $this->syncTransactions($token),
         ];
+    }
+
+    /**
+     * Fetch active customers from QBO for the post-connect client picker.
+     *
+     * @return array<int, array{qbo_id: string, display_name: string, company_name: string|null}>
+     */
+    public function fetchCustomersForSelection(QuickBooksToken $token, ?string $search = null): array
+    {
+        $maxResults = min(config('quickbooks.max_results', 1000), 200);
+        $query      = "SELECT Id, DisplayName, CompanyName, FullyQualifiedName FROM Customer WHERE Active = true";
+
+        if ($search !== null && $search !== '') {
+            $term  = str_replace("'", "\\'", $search);
+            $query .= " AND (DisplayName LIKE '%{$term}%' OR CompanyName LIKE '%{$term}%' OR FullyQualifiedName LIKE '%{$term}%')";
+        }
+
+        $query .= " MAXRESULTS {$maxResults}";
+
+        $rows = $this->qbQuery($token, $query, 'Customer');
+
+        $clients = [];
+
+        foreach ($rows as $customer) {
+            $displayName = $customer->DisplayName
+                ?? $customer->FullyQualifiedName
+                ?? $customer->CompanyName
+                ?? null;
+
+            if (! $displayName) {
+                continue;
+            }
+
+            $clients[] = [
+                'qbo_id'       => (string) $customer->Id,
+                'display_name' => $displayName,
+                'company_name' => $customer->CompanyName ?? null,
+            ];
+        }
+
+        usort($clients, fn ($a, $b) => strcasecmp($a['display_name'], $b['display_name']));
+
+        return $clients;
+    }
+
+    /**
+     * Persist the client the user chose after OAuth and optionally sync company profile.
+     */
+    public function selectClient(QuickBooksToken $token, string $qboCustomerId, string $displayName): QuickBooksToken
+    {
+        $token->update([
+            'selected_client_qbo_id' => $qboCustomerId,
+            'selected_client_name'   => $displayName,
+            'client_selected_at'     => now(),
+        ]);
+
+        return $token->fresh();
     }
 
     // ──────────────────────────────────────────────────────────────────────────
