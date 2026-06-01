@@ -333,7 +333,7 @@ class QuickBooksController extends Controller
 
         $customers = QuickBooksCustomer::where('realm_id', $token->realm_id);
         $this->applySelectedClientToCustomers($customers, $token);
-        $customers
+        $customers = $customers
             ->when($request->filled('search'), function ($q) use ($request) {
                 $term = '%' . $request->search . '%';
                 $q->where(function ($q2) use ($term) {
@@ -373,7 +373,7 @@ class QuickBooksController extends Controller
 
         $invoices = QuickBooksInvoice::where('realm_id', $token->realm_id);
         $this->applySelectedClientToInvoices($invoices, $token);
-        $invoices
+        $invoices = $invoices
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->status))
             ->when($request->filled('customer'), fn ($q) => $q->where('customer_name', 'like', '%' . $request->customer . '%'))
             ->when($request->filled('from'), fn ($q) => $q->whereDate('txn_date', '>=', $request->from))
