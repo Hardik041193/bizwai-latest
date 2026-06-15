@@ -5,6 +5,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\QuickBooksController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\ContactController;
+use App\Http\Controllers\DashboardController; // ← ADD THIS
 use Illuminate\Support\Facades\Route;
 
 // ── Public auth ──
@@ -32,6 +33,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/user', [AuthController::class, 'user']);
     Route::post('/logout', [AuthController::class, 'logout']);
 
+    // ── Admin Dashboard Stats ── ← ADD THIS
+    Route::get('/admin/dashboard/stats', [DashboardController::class, 'stats'])
+        ->name('admin.dashboard.stats');
+
     // ── Admin: Users CRUD ──
     Route::prefix('admin/users')->name('admin.users.')->middleware('throttle:60,1')->group(function () {
         Route::get('/',          [UserController::class, 'index'])->name('index');
@@ -42,6 +47,13 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::patch('/{user}/approve', [UserController::class, 'approve'])->name('approve');
         Route::patch('/{user}/revoke',  [UserController::class, 'revoke'])->name('revoke');
+    });
+
+    // ── Admin: Contact Us Listing ──
+    Route::prefix('admin/contact')->name('admin.contact.')->middleware('throttle:60,1')->group(function () {
+        Route::get('/',            [ContactController::class, 'adminIndex'])->name('index');
+        Route::patch('/{id}/read', [ContactController::class, 'markRead'])->name('markRead');
+        Route::delete('/{id}',     [ContactController::class, 'destroy'])->name('destroy');
     });
 
     Route::get('/contact-us',  [ContactController::class, 'index'])->name('contact.index');

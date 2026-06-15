@@ -9,6 +9,7 @@ export interface ProfileData {
     role: 'admin' | 'user';
     phone: string | null;
     job_title: string | null;
+    company_name: string | null;
     address: string | null;
     bio: string | null;
     avatar_url: string | null;
@@ -21,6 +22,7 @@ export interface UpdateProfilePayload {
     email: string;
     phone?: string;
     job_title?: string;
+    company_name?: string;
     address?: string;
     bio?: string;
 }

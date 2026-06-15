@@ -76,7 +76,7 @@ class UserController extends Controller
             'password'  => Hash::make($data['password']),
             'role'      => $data['role'],
             'phone'     => $data['phone']     ?? null,
-            'job_title' => $data['job_title'] ?? null,
+            'company_name' => $data['company_name'] ?? null,
             'address'   => $data['address']   ?? null,
         ]);
 
@@ -101,7 +101,7 @@ class UserController extends Controller
             'email'     => $data['email'],
             'role'      => $data['role'],
             'phone'     => $data['phone']     ?? null,
-            'job_title' => $data['job_title'] ?? null,
+            'company_name' => $data['company_name'] ?? null,
             'address'   => $data['address']   ?? null,
         ]);
 
@@ -214,6 +214,7 @@ class UserController extends Controller
             'status_label'      => $statusLabel,
             'phone'             => $user->phone,
             'job_title'         => $user->job_title,
+            'company_name'      => $user->company_name,
             'address'           => $user->address,
             'avatar_url'        => $user->avatarUrl(),
             'email_verified_at' => $user->email_verified_at,

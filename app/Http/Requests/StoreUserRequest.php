@@ -20,6 +20,7 @@ class StoreUserRequest extends FormRequest
             'role'      => ['required', 'in:admin,user'],
             'phone'     => ['nullable', 'string', 'max:30'],
             'job_title' => ['nullable', 'string', 'max:100'],
+            'company_name' => ['nullable', 'string', 'max:100'],
             'address'   => ['nullable', 'string', 'max:255'],
         ];
     }
