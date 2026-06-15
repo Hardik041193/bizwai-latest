@@ -10,7 +10,7 @@
             class="bg-white fixed ltr:-right-[400px] rtl:-left-[400px] top-0 bottom-0 w-full max-w-[400px] shadow-[5px_0_25px_0_rgba(94,92,154,0.1)] transition-[right] duration-300 z-[51] dark:bg-[#0e1726] p-4"
             :class="{ 'ltr:!right-0 rtl:!left-0': showCustomizer }"
         >
-            <a
+            <!-- <a
                 href="javascript:;"
                 class="bg-primary ltr:rounded-tl-full rtl:rounded-tr-full ltr:rounded-bl-full rtl:rounded-br-full absolute ltr:-left-12 rtl:-right-12 top-0 bottom-0 my-auto w-12 h-10 flex justify-center items-center text-white cursor-pointer"
                 @click="showCustomizer = !showCustomizer"
@@ -31,7 +31,7 @@
                         stroke-width="1.5"
                     />
                 </svg>
-            </a>
+            </a> -->
             <perfect-scrollbar
                 :options="{
                     swipeEasing: true,

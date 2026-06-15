@@ -121,4 +121,6 @@ return [
         ],
     ],
 
+    'admin_address' => env('MAIL_ADMIN_ADDRESS', 'rohansan076@gmail.com'),
+
 ];

@@ -10,6 +10,7 @@ export interface AdminUser {
     status_label: string;
     phone: string | null;
     job_title: string | null;
+    company_name: string | null;
     address: string | null;
     avatar_url: string | null;
     email_verified_at: string | null;
@@ -32,6 +33,7 @@ export interface UserFormData {
     role: 'admin' | 'user';
     phone: string;
     job_title: string;
+    company_name: string;
     address: string;
 }
 
