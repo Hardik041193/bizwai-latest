@@ -32,17 +32,17 @@
                         v-model="filters.search"
                         @input="onSearchInput"
                         type="text"
-                        class="form-input pl-9"
+                        class="w-full h-10 pl-10 pr-4 rounded-lg bg-gray-50 border border-gray-200 text-sm focus:outline-none focus:border-[#1877F2] focus:bg-white transition-colors"
                         placeholder="Search by name or email…"
                     />
                 </div>
 
                 <!-- Role filter -->
-                <select v-model="filters.role" @change="() => loadUsers(1)" class="form-select w-40">
+                <!-- <select v-model="filters.role" @change="() => loadUsers(1)" class="form-select w-40">
                     <option value="">All Roles</option>
                     <option value="admin">Admin</option>
                     <option value="user">User</option>
-                </select>
+                </select> -->
 
                 <!-- Per page -->
                 <select v-model="filters.per_page" @change="() => loadUsers(1)" class="form-select w-32">
@@ -120,11 +120,11 @@
 
                             <!-- Company -->
                             <td>
-                                <div v-if="user.job_title" class="flex items-center gap-1.5 text-sm">
+                                <div v-if="user.company_name" class="flex items-center gap-1.5 text-sm">
                                     <svg class="w-4 h-4 text-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
                                     </svg>
-                                    {{ user.job_title }}
+                                    {{ user.company_name }}
                                 </div>
                                 <span v-else class="text-white-dark/30 text-xs">—</span>
                             </td>
@@ -341,10 +341,10 @@
                             <input v-model="form.phone" type="tel" class="form-input" placeholder="+1 (555) 000-0000" />
                         </div>
 
-                        <!-- Job Title -->
+                        <!-- Company -->
                         <div>
-                            <label class="block text-sm font-medium mb-1.5">Job Title</label>
-                            <input v-model="form.job_title" type="text" class="form-input" placeholder="e.g. Software Engineer" />
+                            <label class="block text-sm font-medium mb-1.5">Company</label>
+                            <input v-model="form.company_name" type="text" class="form-input" placeholder="e.g. Company Name" />
                         </div>
 
                         <!-- Address -->
@@ -422,7 +422,7 @@ const modal = reactive({ open: false, mode: 'create' as 'create' | 'edit', editI
 
 const BLANK_FORM: UserFormData = {
     name: '', email: '', password: '', password_confirmation: '',
-    role: 'user', phone: '', job_title: '', address: '',
+    role: 'user', phone: '', company_name: '', address: '',
 };
 
 const form = reactive<UserFormData>({ ...BLANK_FORM });
@@ -444,7 +444,7 @@ function openEditModal(user: AdminUser) {
         password_confirmation: '',
         role:                  user.role,
         phone:                 user.phone     ?? '',
-        job_title:             user.job_title ?? '',
+        company_name:        user.company_name ?? '',
         address:               user.address   ?? '',
     });
     modal.mode   = 'edit';

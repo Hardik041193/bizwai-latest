@@ -189,18 +189,18 @@
                                 </p>
                             </div>
 
-                            <!-- Job Title -->
+                            <!-- Company Name -->
                             <div>
-                                <label class="block text-sm font-medium mb-1.5">Job Title</label>
+                                <label class="block text-sm font-medium mb-1.5">Company</label>
                                 <input
-                                    v-model="profileForm.job_title"
+                                    v-model="profileForm.company_name"
                                     type="text"
                                     class="form-input"
-                                    :class="{ 'border-danger': profileStore.errors.job_title }"
+                                    :class="{ 'border-danger': profileStore.errors.company_name }"
                                     placeholder="e.g. Software Engineer"
                                 />
-                                <p v-if="profileStore.errors.job_title" class="text-danger text-xs mt-1">
-                                    {{ profileStore.errors.job_title[0] }}
+                                <p v-if="profileStore.errors.company_name" class="text-danger text-xs mt-1">
+                                    {{ profileStore.errors.company_name[0] }}
                                 </p>
                             </div>
 
@@ -381,7 +381,7 @@ const profileForm = reactive({
     name:      '',
     email:     '',
     phone:     '',
-    job_title: '',
+    company_name: '',
     address:   '',
     bio:       '',
 });
@@ -392,7 +392,7 @@ function syncFormFromStore() {
     profileForm.name      = p.name       ?? '';
     profileForm.email     = p.email      ?? '';
     profileForm.phone     = p.phone      ?? '';
-    profileForm.job_title = p.job_title  ?? '';
+    profileForm.company_name = p.company_name  ?? '';
     profileForm.address   = p.address    ?? '';
     profileForm.bio       = p.bio        ?? '';
 }

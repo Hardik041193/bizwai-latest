@@ -78,6 +78,15 @@ class AuthController extends Controller
             ], 403);
         }
 
+        // Status 1 = Approved → allow login
+        // (optional: block any unknown status values too)
+        if ((int) $user->status !== 1) {
+            return response()->json([
+                'message'        => 'Your account is pending approval. Please wait for an administrator to approve your account.',
+                'account_pending' => true,
+            ], 403);
+        }
+
         $user->tokens()->delete();
         $token = $user->createToken('auth-token')->plainTextToken;
 

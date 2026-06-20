@@ -427,6 +427,15 @@
                                     </div>
                                 </router-link>
                             </li>
+                            <li class="nav-item">
+                                <router-link to="/admin/contact" class="group" @click="toggleMobileMenu">
+                                    <div class="flex items-center">
+                                        <svg data-v-f687fc25="" class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path data-v-f687fc25="" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7
+                 a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                                        <span class="ltr:pl-3 rtl:pr-3 font-normal text-black text-base">Contact Messages</span>
+                                    </div>
+                                </router-link>
+                            </li>
                         </template>
 
                         <!-- ── QuickBooks ── -->
@@ -504,7 +513,7 @@
                                             <path opacity="0.5" d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                                         </svg>
                                         <span class="ltr:pl-3 rtl:pr-3 font-normal text-black text-base">Contact Us</span>
-                                        
+
                                         <!-- <span class="ltr:pl-3 rtl:pr-3 font-normal text-black text-base">My Invoices</span> -->
                                     </div>
                                 </router-link>

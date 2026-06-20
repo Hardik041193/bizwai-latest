@@ -23,6 +23,13 @@ const routes: RouteRecordRaw[] = [
         component: () => import(/* webpackChunkName: "admin-users" */ '../views/admin/users/index.vue'),
         meta: { requiresAuth: true, requiresAdmin: true },
     },
+    // ── Admin: Contact Messages ──────────────────────────────────────────────
+    {
+        path: '/admin/contact',
+        name: 'admin.contact',
+        component: () => import(/* webpackChunkName: "admin-contact-messages" */ '../views/admin/contact/index.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true },
+    },
 
     // ── QuickBooks (demo-style entry: /quickbooks → portal or connect flow) ──
     {
