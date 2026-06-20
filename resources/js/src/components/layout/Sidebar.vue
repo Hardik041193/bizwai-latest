@@ -489,7 +489,7 @@
                                 </router-link>
                             </li>
                             <li class="nav-item">
-                                <router-link to="" class="group" @click="toggleMobileMenu">
+                                <router-link to="/apps/chat" class="group" @click="toggleMobileMenu">
                                     <div class="flex items-center">
                                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-message-square w-5 h-5" aria-hidden="true" x-file-name="Layout" x-line-number="97" x-column="16" x-component="Icon" x-id="Layout_97_16" x-dynamic="true" x-source-type="static-imported" x-source-var="navItems" x-source-file-abs="/app/frontend/src/components/Layout.jsx" x-source-line="21" x-source-editable="true" x-array-var="navItems" x-array-line="21" x-array-item-param="item"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
                                         <span class="ltr:pl-3 rtl:pr-3 font-normal text-black text-base">Chat AI</span>
