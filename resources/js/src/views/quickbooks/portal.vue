@@ -77,10 +77,11 @@
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
+            <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 mb-5">
                 <MetricCard title="Total Invoices" :value="String(qbStore.summary?.total_invoices ?? 0)" icon="invoice" />
                 <MetricCard title="Total Customers" :value="String(qbStore.summary?.total_customers ?? 0)" icon="customers" />
-                <MetricCard title="Invoice Total" :value="formatCurrency(qbStore.summary?.invoice_total ?? 0)" icon="money" />
+                <MetricCard title="Open Balance" :value="formatCurrency(qbStore.summary?.outstanding_balance ?? 0)" icon="money" />
+                <MetricCard title="Total Invoiced" :value="formatCurrency(qbStore.summary?.invoice_total ?? 0)" icon="money" />
             </div>
 
             <div class="panel">

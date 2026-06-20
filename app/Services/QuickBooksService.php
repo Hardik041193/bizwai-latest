@@ -458,18 +458,20 @@ class QuickBooksService
      */
     public function fetchCustomersForSelection(QuickBooksToken $token, ?string $search = null): array
     {
-        $maxResults = min(config('quickbooks.max_results', 1000), 200);
-        $query      = "SELECT Id, DisplayName, CompanyName, FullyQualifiedName FROM Customer WHERE Active = true";
+        // QuickBooks IQL does not support the OR operator or parenthesised
+        // grouping in a WHERE clause, so multiple LIKE filters cannot be combined
+        // server-side. Fetch the active customers and filter across fields in PHP,
+        // which also avoids fragile manual quote-escaping of the search term
+        // (IQL escapes single quotes by doubling them, not with a backslash).
+        $maxResults = min((int) config('quickbooks.max_results', 1000), 1000);
 
-        if ($search !== null && $search !== '') {
-            $term  = str_replace("'", "\\'", $search);
-            $query .= " AND (DisplayName LIKE '%{$term}%' OR CompanyName LIKE '%{$term}%' OR FullyQualifiedName LIKE '%{$term}%')";
-        }
+        $rows = $this->qbQuery(
+            $token,
+            "SELECT Id, DisplayName, CompanyName, FullyQualifiedName FROM Customer WHERE Active = true MAXRESULTS {$maxResults}",
+            'Customer'
+        );
 
-        $query .= " MAXRESULTS {$maxResults}";
-
-        $rows = $this->qbQuery($token, $query, 'Customer');
-
+        $term    = $search !== null ? mb_strtolower(trim($search)) : '';
         $clients = [];
 
         foreach ($rows as $customer) {
@@ -482,10 +484,24 @@ class QuickBooksService
                 continue;
             }
 
+            $companyName = $customer->CompanyName ?? null;
+
+            if ($term !== '') {
+                $haystack = mb_strtolower(implode(' ', array_filter([
+                    $displayName,
+                    $companyName,
+                    $customer->FullyQualifiedName ?? null,
+                ])));
+
+                if (! str_contains($haystack, $term)) {
+                    continue;
+                }
+            }
+
             $clients[] = [
                 'qbo_id'       => (string) $customer->Id,
                 'display_name' => $displayName,
-                'company_name' => $customer->CompanyName ?? null,
+                'company_name' => $companyName,
             ];
         }
 
