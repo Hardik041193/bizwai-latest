@@ -202,7 +202,23 @@ const search = ref('');
 let searchTimer: ReturnType<typeof setTimeout>;
 
 const companyName = computed(() => qbStore.summary?.company?.name || qbStore.status?.company_name || 'QuickBooks Company');
-const activeClientName = computed(() => qbStore.status?.selected_client?.display_name ?? null);
+const activeClientName = computed(() => {
+    const status = qbStore.status;
+    if (!status) {
+        return null;
+    }
+    if (status.all_clients) {
+        return 'All clients';
+    }
+    const list = status.selected_clients ?? [];
+    if (list.length > 1) {
+        return `${list.length} clients`;
+    }
+    if (list.length === 1) {
+        return list[0].name ?? status.selected_client?.display_name ?? null;
+    }
+    return status.selected_client?.display_name ?? null;
+});
 
 function changeClient() {
     router.push({ name: 'quickbooks-select-client', query: { change: '1' } });

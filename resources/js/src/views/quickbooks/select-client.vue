@@ -41,7 +41,13 @@
                     </div>
                 </div>
 
-                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 mt-4">All clients</p>
+                <div class="flex items-center justify-between mb-2 mt-4">
+                    <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">All clients</p>
+                    <span v-if="selectAll" class="text-xs font-medium text-[#2ca01c]">All clients selected</span>
+                    <span v-else-if="selectedClients.length" class="text-xs font-medium text-[#2ca01c]">
+                        {{ selectedClients.length }} selected
+                    </span>
+                </div>
 
                 <div v-if="loading" class="flex justify-center py-12 border border-gray-200 dark:border-gray-700 rounded">
                     <span class="animate-spin border-4 border-[#2ca01c] border-l-transparent rounded-full w-8 h-8"></span>
@@ -58,30 +64,48 @@
                     No clients found. Try a different search term.
                 </div>
 
-                <ul
-                    v-else
-                    class="max-h-56 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
-                >
-                    <li v-for="client in clients" :key="client.qbo_id">
-                        <button
-                            type="button"
-                            class="w-full text-left px-4 py-2.5 text-sm border-b border-gray-100 dark:border-gray-800 last:border-0 transition"
-                            :class="selectedId === client.qbo_id
-                                ? 'bg-[#2ca01c]/10 text-[#2ca01c] font-medium'
-                                : 'text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800'"
-                            @click="selectClient(client)"
-                        >
-                            {{ client.display_name }}
-                        </button>
-                    </li>
-                </ul>
+                <div v-else class="border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-gray-900">
+                    <!-- Select all clients -->
+                    <label class="flex items-center gap-3 px-4 py-2.5 border-b border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800">
+                        <input
+                            type="checkbox"
+                            class="form-checkbox text-[#2ca01c] rounded"
+                            :checked="selectAll"
+                            @change="toggleSelectAll"
+                        />
+                        <span class="text-sm font-semibold text-gray-800 dark:text-gray-200">Select all clients</span>
+                    </label>
+
+                    <ul class="max-h-56 overflow-y-auto">
+                        <li v-for="client in clients" :key="client.qbo_id">
+                            <label
+                                class="flex items-center gap-3 px-4 py-2.5 text-sm border-b border-gray-100 dark:border-gray-800 last:border-0 transition"
+                                :class="[
+                                    isSelected(client.qbo_id) ? 'bg-[#2ca01c]/10' : 'hover:bg-gray-50 dark:hover:bg-gray-800',
+                                    selectAll ? 'cursor-not-allowed opacity-70' : 'cursor-pointer',
+                                ]"
+                            >
+                                <input
+                                    type="checkbox"
+                                    class="form-checkbox text-[#2ca01c] rounded"
+                                    :checked="isSelected(client.qbo_id)"
+                                    :disabled="selectAll"
+                                    @change="toggleClient(client)"
+                                />
+                                <span :class="isSelected(client.qbo_id) ? 'text-[#2ca01c] font-medium' : 'text-gray-800 dark:text-gray-200'">
+                                    {{ client.display_name }}
+                                </span>
+                            </label>
+                        </li>
+                    </ul>
+                </div>
             </div>
 
             <div class="px-8 py-4 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-200 dark:border-gray-700 flex justify-end">
                 <button
                     type="button"
                     class="rounded-full bg-[#2ca01c] hover:bg-[#248f18] text-white text-sm font-semibold px-8 py-2.5 disabled:opacity-50 disabled:cursor-not-allowed transition"
-                    :disabled="!selectedId || saving"
+                    :disabled="!canConfirm || saving"
                     @click="confirmSelection"
                 >
                     <span v-if="saving" class="inline-flex items-center gap-2">
@@ -122,11 +146,13 @@ const isChangeMode = computed(() => route.query.change === '1');
 const search = ref('');
 const clients = ref<SelectionClient[]>([]);
 const companyName = ref<string | null>(null);
-const selectedId = ref<string | null>(null);
-const selectedName = ref<string | null>(null);
+const selectAll = ref(false);
+const selectedClients = ref<SelectionClient[]>([]);
 const loading = ref(true);
 const saving = ref(false);
 const error = ref<string | null>(null);
+
+const canConfirm = computed(() => selectAll.value || selectedClients.value.length > 0);
 
 let searchTimer: ReturnType<typeof setTimeout>;
 
@@ -159,13 +185,30 @@ function clearSearch() {
     loadClients();
 }
 
-function selectClient(client: SelectionClient) {
-    selectedId.value = client.qbo_id;
-    selectedName.value = client.display_name;
+function isSelected(qboId: string): boolean {
+    return selectAll.value || selectedClients.value.some((c) => c.qbo_id === qboId);
+}
+
+function toggleClient(client: SelectionClient) {
+    if (selectAll.value) {
+        return;
+    }
+    if (selectedClients.value.some((c) => c.qbo_id === client.qbo_id)) {
+        selectedClients.value = selectedClients.value.filter((c) => c.qbo_id !== client.qbo_id);
+    } else {
+        selectedClients.value = [...selectedClients.value, client];
+    }
+}
+
+function toggleSelectAll() {
+    selectAll.value = !selectAll.value;
+    if (selectAll.value) {
+        selectedClients.value = [];
+    }
 }
 
 async function confirmSelection() {
-    if (!selectedId.value || !selectedName.value) {
+    if (!canConfirm.value) {
         return;
     }
 
@@ -174,9 +217,23 @@ async function confirmSelection() {
         if (isChangeMode.value) {
             await qbStore.clearClientSelection();
         }
-        await qbStore.saveClientSelection(selectedId.value, selectedName.value);
+        await qbStore.saveClientSelection({
+            selectAll: selectAll.value,
+            clients: selectAll.value
+                ? []
+                : selectedClients.value.map((c) => ({
+                      qbo_id: c.qbo_id,
+                      display_name: c.display_name,
+                  })),
+        });
         await qbStore.fetchStatus(true);
-        showToast(`Working with ${selectedName.value}`, 'success');
+
+        const label = selectAll.value
+            ? 'all clients'
+            : selectedClients.value.length === 1
+                ? selectedClients.value[0].display_name
+                : `${selectedClients.value.length} clients`;
+        showToast(`Working with ${label}`, 'success');
         router.push(dashboardPath.value);
     } catch (err: any) {
         showToast(err.response?.data?.message ?? 'Failed to save client selection.', 'error');
@@ -198,9 +255,16 @@ onMounted(async () => {
         return;
     }
 
-    if (isChangeMode.value && qbStore.status?.selected_client) {
-        selectedId.value = qbStore.status.selected_client.qbo_id;
-        selectedName.value = qbStore.status.selected_client.display_name;
+    if (isChangeMode.value) {
+        if (qbStore.status?.all_clients) {
+            selectAll.value = true;
+        } else if (qbStore.status?.selected_clients?.length) {
+            selectedClients.value = qbStore.status.selected_clients.map((c) => ({
+                qbo_id: c.qbo_id,
+                display_name: c.name ?? '',
+                company_name: null,
+            }));
+        }
     }
 
     await loadClients();

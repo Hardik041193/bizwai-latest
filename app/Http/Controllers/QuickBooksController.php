@@ -134,9 +134,11 @@ class QuickBooksController extends Controller
      */
     public function saveClientSelection(Request $request): JsonResponse
     {
-        $request->validate([
-            'qbo_customer_id' => 'required|string|max:50',
-            'display_name'    => 'required|string|max:255',
+        $validated = $request->validate([
+            'select_all'             => 'sometimes|boolean',
+            'clients'                => 'array',
+            'clients.*.qbo_id'       => 'required|string|max:50',
+            'clients.*.display_name' => 'required|string|max:255',
         ]);
 
         $token = $this->resolveToken($request);
@@ -145,20 +147,27 @@ class QuickBooksController extends Controller
             return response()->json(['message' => 'QuickBooks is not connected.'], 422);
         }
 
-        $token = $this->quickBooks->selectClient(
-            $token,
-            $request->input('qbo_customer_id'),
-            $request->input('display_name')
-        );
+        $selectAll = (bool) ($validated['select_all'] ?? false);
+
+        $clients = $selectAll ? [] : array_map(fn ($c) => [
+            'qbo_id' => $c['qbo_id'],
+            'name'   => $c['display_name'],
+        ], $validated['clients'] ?? []);
+
+        if (! $selectAll && count($clients) === 0) {
+            return response()->json([
+                'message' => 'Please select at least one client, or choose all clients.',
+            ], 422);
+        }
+
+        $token = $this->quickBooks->selectClients($token, $clients);
 
         dispatch(new SyncQuickBooksDataJob($token->id));
 
         return response()->json([
-            'message' => 'Client selected successfully.',
-            'selected_client' => [
-                'qbo_id'       => $token->selected_client_qbo_id,
-                'display_name' => $token->selected_client_name,
-            ],
+            'message'          => 'Client selection saved successfully.',
+            'all_clients'      => $token->isAllClientsSelected(),
+            'selected_clients' => $token->selectedClients(),
         ]);
     }
 
@@ -176,6 +185,7 @@ class QuickBooksController extends Controller
         $token->update([
             'selected_client_qbo_id' => null,
             'selected_client_name'   => null,
+            'selected_clients'       => null,
             'client_selected_at'     => null,
         ]);
 
@@ -211,7 +221,9 @@ class QuickBooksController extends Controller
             'legal_name'               => $token->legal_name,
             'company_email'            => $token->company_email,
             'country'                  => $token->country,
-            'needs_client_selection'   => ! $token->hasSelectedClient(),
+            'needs_client_selection'   => ! $token->hasCompletedClientSelection(),
+            'all_clients'              => $token->isAllClientsSelected(),
+            'selected_clients'         => $token->selectedClients(),
             'selected_client'          => $token->hasSelectedClient() ? [
                 'qbo_id'       => $token->selected_client_qbo_id,
                 'display_name' => $token->selected_client_name,
@@ -269,8 +281,9 @@ class QuickBooksController extends Controller
 
     private function applySelectedClientToInvoices($query, QuickBooksToken $token): void
     {
+        // No filter when tracking all clients (or selection not yet completed).
         if ($token->hasSelectedClient()) {
-            $query->where('customer_name', $token->selected_client_name);
+            $query->whereIn('customer_name', $token->selectedClientNames());
         }
     }
 
@@ -280,11 +293,11 @@ class QuickBooksController extends Controller
             return;
         }
 
-        $name = $token->selected_client_name;
+        $names = $token->selectedClientNames();
 
-        $query->where(function ($q) use ($name) {
-            $q->where('display_name', $name)
-                ->orWhere('company_name', $name);
+        $query->where(function ($q) use ($names) {
+            $q->whereIn('display_name', $names)
+                ->orWhereIn('company_name', $names);
         });
     }
 
@@ -457,6 +470,8 @@ class QuickBooksController extends Controller
                 'qbo_id'       => $token->selected_client_qbo_id,
                 'display_name' => $token->selected_client_name,
             ] : null,
+            'all_clients'         => $token->isAllClientsSelected(),
+            'selected_clients'    => $token->selectedClients(),
             'invoice_total'       => (float) $invoiceTotal,
             'last_synced_at'      => QuickBooksInvoice::where('realm_id', $realmId)->max('synced_at'),
             'company'             => [

@@ -118,6 +118,7 @@ class QuickBooksService
                     'refresh_token_expires_at'  => now()->addSeconds($refreshExpiresIn),
                     'selected_client_qbo_id'    => null,
                     'selected_client_name'      => null,
+                    'selected_clients'          => null,
                     'client_selected_at'          => null,
                 ]
             );
@@ -511,13 +512,28 @@ class QuickBooksService
     }
 
     /**
-     * Persist the client the user chose after OAuth and optionally sync company profile.
+     * Persist the client(s) the user chose after OAuth.
+     *
+     * Pass an empty array to track ALL clients (no filtering). Otherwise pass a
+     * list of ['qbo_id' => ..., 'name' => ...] for the specific clients to track.
+     *
+     * @param  array<int, array{qbo_id: string, name: string|null}>  $clients
      */
-    public function selectClient(QuickBooksToken $token, string $qboCustomerId, string $displayName): QuickBooksToken
+    public function selectClients(QuickBooksToken $token, array $clients): QuickBooksToken
     {
+        // Normalise to the stored shape and keep the legacy single columns in
+        // sync (first client, or null for "all") for backward compatibility.
+        $normalised = array_values(array_map(fn ($c) => [
+            'qbo_id' => (string) $c['qbo_id'],
+            'name'   => $c['name'] ?? null,
+        ], $clients));
+
+        $first = $normalised[0] ?? null;
+
         $token->update([
-            'selected_client_qbo_id' => $qboCustomerId,
-            'selected_client_name'   => $displayName,
+            'selected_clients'       => $normalised,
+            'selected_client_qbo_id' => $first['qbo_id'] ?? null,
+            'selected_client_name'   => $first['name'] ?? null,
             'client_selected_at'     => now(),
         ]);
 

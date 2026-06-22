@@ -8,6 +8,11 @@ export interface QBSelectedClient {
     display_name: string;
 }
 
+export interface QBSelectedClientEntry {
+    qbo_id: string;
+    name: string | null;
+}
+
 export interface QBStatus {
     connected: boolean;
     role?: 'admin' | 'user';
@@ -17,6 +22,8 @@ export interface QBStatus {
     company_email?: string | null;
     country?: string | null;
     needs_client_selection?: boolean;
+    all_clients?: boolean;
+    selected_clients?: QBSelectedClientEntry[];
     selected_client?: QBSelectedClient | null;
     token_expires_at?: string;
     refresh_token_expires_at?: string;
@@ -33,6 +40,8 @@ export interface QBSummary {
     total_invoices: number;
     total_customers: number;
     invoice_total: number;
+    all_clients?: boolean;
+    selected_clients?: QBSelectedClientEntry[];
     last_synced_at: string | null;
     company?: {
         name: string | null;
@@ -172,10 +181,13 @@ export const useQuickBooksStore = defineStore('quickbooks', {
             return data;
         },
 
-        async saveClientSelection(qboCustomerId: string, displayName: string): Promise<void> {
+        async saveClientSelection(payload: {
+            clients?: Array<{ qbo_id: string; display_name: string }>;
+            selectAll?: boolean;
+        }): Promise<void> {
             await axios.post('/api/quickbooks/selection/client', {
-                qbo_customer_id: qboCustomerId,
-                display_name: displayName,
+                select_all: payload.selectAll ?? false,
+                clients: payload.clients ?? [],
             });
         },
 
