@@ -82,20 +82,32 @@ class QuickBooksController extends Controller
             return redirect("{$frontendBase}/quickbooks/error?message={$message}");
         }
 
-        // Quick sync of company name only; full sync runs after client selection.
+        // Sync company name, then kick off the full data sync for ALL clients.
+        // (The client-selection step has been removed — we always track every
+        // client of the connected company, so the sync that previously ran after
+        // client selection now runs here, immediately on connect.)
         try {
             $token = QuickBooksToken::where('user_id', $userId)->first();
             if ($token) {
                 $this->quickBooks->syncCompanyInfo($token);
+
+                // Mark selection as completed with no specific client => "all clients",
+                // so no customer-name filter is ever applied to this token's data.
+                if (! $token->hasCompletedClientSelection()) {
+                    $this->quickBooks->selectClients($token, []);
+                    $token->refresh();
+                }
+
+                dispatch(new SyncQuickBooksDataJob($token->id));
             }
         } catch (\Throwable $e) {
-            Log::warning('QuickBooks company info sync after connect (non-fatal).', [
+            Log::warning('QuickBooks sync after connect (non-fatal).', [
                 'user_id' => $userId,
                 'error'   => $e->getMessage(),
             ]);
         }
 
-        return redirect("{$frontendBase}/quickbooks/select-client");
+        return redirect("{$frontendBase}/quickbooks/connected");
     }
 
     /**

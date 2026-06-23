@@ -141,8 +141,12 @@ export const useQuickBooksStore = defineStore('quickbooks', {
 
     getters: {
         isConnected: (state): boolean => state.status?.connected === true,
-        needsClientSelection: (state): boolean =>
-            state.status?.connected === true && state.status?.needs_client_selection === true,
+        // Client-selection step disabled: we now use ALL clients of the company
+        // selected at QuickBooks integration time. Force `false` so the app never
+        // redirects to /quickbooks/select-client. To re-enable, restore the line below.
+        // needsClientSelection: (state): boolean =>
+        //     state.status?.connected === true && state.status?.needs_client_selection === true,
+        needsClientSelection: (): boolean => false,
     },
 
     actions: {

@@ -59,9 +59,11 @@
                                     </svg>
                                     Client: {{ activeClientName }}
                                 </span>
+                                <!-- Client-selection disabled: we now use ALL clients of the connected company.
                                 <button type="button" class="underline text-white/80 hover:text-white text-xs" @click="changeClient">
                                     Change client
                                 </button>
+                                -->
                             </p>
                             <p class="text-xs text-white/75">
                                 {{ qbStore.summary?.company?.legal_name || companyName }}
