@@ -82,10 +82,12 @@ class QuickBooksController extends Controller
             return redirect("{$frontendBase}/quickbooks/error?message={$message}");
         }
 
-        // Sync company name, then kick off the full data sync for ALL clients.
-        // (The client-selection step has been removed — we always track every
-        // client of the connected company, so the sync that previously ran after
-        // client selection now runs here, immediately on connect.)
+        // Sync only the lightweight company info here (one quick API call) and
+        // mark the token as "all clients" so no customer-name filter is applied.
+        // The full data sync (invoices/customers/transactions) is intentionally
+        // NOT run inline — it is heavy (~10-15s) and would make the post-OAuth
+        // redirect hang on a blank page. The frontend kicks it off right after
+        // landing on /quickbooks/connected, with a visible "syncing" state.
         try {
             $token = QuickBooksToken::where('user_id', $userId)->first();
             if ($token) {
@@ -97,11 +99,9 @@ class QuickBooksController extends Controller
                     $this->quickBooks->selectClients($token, []);
                     $token->refresh();
                 }
-
-                dispatch(new SyncQuickBooksDataJob($token->id));
             }
         } catch (\Throwable $e) {
-            Log::warning('QuickBooks sync after connect (non-fatal).', [
+            Log::warning('QuickBooks company info sync after connect (non-fatal).', [
                 'user_id' => $userId,
                 'error'   => $e->getMessage(),
             ]);

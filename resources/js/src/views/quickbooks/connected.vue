@@ -14,31 +14,28 @@
             <p class="text-white-dark/70 mb-2">
                 Your QuickBooks account has been linked successfully.
             </p>
-            <p class="text-white-dark/50 text-sm mb-8">
-                You're all set — Bizwai will work with all clients of your connected company.
-            </p>
 
-            <div class="flex gap-3 justify-center">
-                <!-- Client-selection disabled: we now use ALL clients of the connected company.
-                <router-link to="/quickbooks/select-client" class="btn btn-success gap-2">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-                    </svg>
-                    Select Client →
-                </router-link>
-                -->
-                <router-link :to="dashboardPath" class="btn btn-success">
-                    Continue to Dashboard →
-                </router-link>
+            <!-- Syncing state: the full data pull runs here (not in the OAuth
+                 callback) so the user sees a clear progress indicator instead of
+                 a blank page while invoices/customers/transactions are fetched. -->
+            <div v-if="syncing" class="mt-6 flex flex-col items-center gap-3">
+                <span class="animate-spin border-4 border-success border-l-transparent rounded-full w-9 h-9"></span>
+                <p class="text-white-dark/60 text-sm">
+                    Syncing all your QuickBooks data… this can take a few moments.
+                </p>
             </div>
+            <p v-else class="mt-6 text-white-dark/50 text-sm">
+                Taking you to your dashboard…
+            </p>
         </div>
     </div>
 </template>
 
 <script lang="ts" setup>
-import { onMounted } from 'vue';
+import { computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useMeta } from '../../composables/use-meta';
+import { useToast } from '../../composables/use-toast';
 import { useAuthStore } from '../../stores/auth';
 import { useQuickBooksStore } from '../../stores/quickbooks';
 
@@ -47,14 +44,31 @@ useMeta({ title: 'QuickBooks Connected' });
 const authStore = useAuthStore();
 const qbStore = useQuickBooksStore();
 const router = useRouter();
+const { showToast } = useToast();
 const dashboardPath = authStore.isAdmin ? '/quickbooks/dashboard' : '/quickbooks/portal';
+
+const syncing = computed(() => qbStore.syncing);
 
 onMounted(async () => {
     await qbStore.fetchStatus(true);
 
-    if (qbStore.needsClientSelection) {
-        router.replace({ name: 'quickbooks-select-client' });
+    if (!qbStore.isConnected) {
+        router.replace({ name: 'quickbooks-connect' });
         return;
+    }
+
+    // The OAuth callback only stores tokens + company info and redirects here
+    // immediately. Pull the full dataset (all clients) now, in the foreground,
+    // so the user gets a visible "syncing" state and a success confirmation.
+    try {
+        await qbStore.triggerSync();
+        await qbStore.fetchStatus(true);
+        showToast('QuickBooks connected — your data has been synced.', 'success');
+    } catch {
+        showToast(
+            qbStore.error ?? 'Connected, but the data sync didn\'t finish. You can retry with Refresh.',
+            'error',
+        );
     }
 
     router.replace(dashboardPath);
