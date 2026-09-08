@@ -116,6 +116,10 @@ class QuickBooksService
                     'refresh_token'             => $accessToken->getRefreshToken(),
                     'token_expires_at'          => now()->addSeconds($accessExpiresIn),
                     'refresh_token_expires_at'  => now()->addSeconds($refreshExpiresIn),
+                    'selected_client_qbo_id'    => null,
+                    'selected_client_name'      => null,
+                    'selected_clients'          => null,
+                    'client_selected_at'          => null,
                 ]
             );
 
@@ -446,6 +450,94 @@ class QuickBooksService
             'invoices'     => $this->syncInvoices($token),
             'transactions' => $this->syncTransactions($token),
         ];
+    }
+
+    /**
+     * Fetch active customers from QBO for the post-connect client picker.
+     *
+     * @return array<int, array{qbo_id: string, display_name: string, company_name: string|null}>
+     */
+    public function fetchCustomersForSelection(QuickBooksToken $token, ?string $search = null): array
+    {
+        // QuickBooks IQL does not support the OR operator or parenthesised
+        // grouping in a WHERE clause, so multiple LIKE filters cannot be combined
+        // server-side. Fetch the active customers and filter across fields in PHP,
+        // which also avoids fragile manual quote-escaping of the search term
+        // (IQL escapes single quotes by doubling them, not with a backslash).
+        $maxResults = min((int) config('quickbooks.max_results', 1000), 1000);
+
+        $rows = $this->qbQuery(
+            $token,
+            "SELECT Id, DisplayName, CompanyName, FullyQualifiedName FROM Customer WHERE Active = true MAXRESULTS {$maxResults}",
+            'Customer'
+        );
+
+        $term    = $search !== null ? mb_strtolower(trim($search)) : '';
+        $clients = [];
+
+        foreach ($rows as $customer) {
+            $displayName = $customer->DisplayName
+                ?? $customer->FullyQualifiedName
+                ?? $customer->CompanyName
+                ?? null;
+
+            if (! $displayName) {
+                continue;
+            }
+
+            $companyName = $customer->CompanyName ?? null;
+
+            if ($term !== '') {
+                $haystack = mb_strtolower(implode(' ', array_filter([
+                    $displayName,
+                    $companyName,
+                    $customer->FullyQualifiedName ?? null,
+                ])));
+
+                if (! str_contains($haystack, $term)) {
+                    continue;
+                }
+            }
+
+            $clients[] = [
+                'qbo_id'       => (string) $customer->Id,
+                'display_name' => $displayName,
+                'company_name' => $companyName,
+            ];
+        }
+
+        usort($clients, fn ($a, $b) => strcasecmp($a['display_name'], $b['display_name']));
+
+        return $clients;
+    }
+
+    /**
+     * Persist the client(s) the user chose after OAuth.
+     *
+     * Pass an empty array to track ALL clients (no filtering). Otherwise pass a
+     * list of ['qbo_id' => ..., 'name' => ...] for the specific clients to track.
+     *
+     * @param  array<int, array{qbo_id: string, name: string|null}>  $clients
+     */
+    public function selectClients(QuickBooksToken $token, array $clients): QuickBooksToken
+    {
+        // Normalise to the stored shape and keep the legacy single columns in
+        // sync (first client, or null for "all") for backward compatibility.
+        $normalised = array_values(array_map(fn ($c) => [
+            'qbo_id' => (string) $c['qbo_id'],
+            'name'   => $c['name'] ?? null,
+        ], $clients));
+
+        $first = $normalised[0] ?? null;
+
+        $token->update([
+            'selected_clients'       => $normalised,
+            'selected_client_qbo_id' => $first['qbo_id'] ?? null,
+            'selected_client_name'   => $first['name'] ?? null,
+            'client_selected_at'     => now(),
+        ]);
+
+        return $token->fresh();
     }
 
     // ──────────────────────────────────────────────────────────────────────────

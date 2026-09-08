@@ -52,6 +52,19 @@
                         <div>
                             <p class="text-xs uppercase tracking-wide text-white/70">Company</p>
                             <h2 class="text-xl font-bold">{{ companyName }}</h2>
+                            <p v-if="activeClientName" class="text-sm text-white/90 mt-1 flex items-center gap-2">
+                                <span class="inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-xs">
+                                    <svg class="w-3.5 h-3.5 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                    </svg>
+                                    Client: {{ activeClientName }}
+                                </span>
+                                <!-- Client-selection disabled: we now use ALL clients of the connected company.
+                                <button type="button" class="underline text-white/80 hover:text-white text-xs" @click="changeClient">
+                                    Change client
+                                </button>
+                                -->
+                            </p>
                             <p class="text-xs text-white/75">
                                 {{ qbStore.summary?.company?.legal_name || companyName }}
                                 <span v-if="qbStore.summary?.company?.country"> · {{ qbStore.summary.company.country }}</span>
@@ -66,10 +79,11 @@
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
+            <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 mb-5">
                 <MetricCard title="Total Invoices" :value="String(qbStore.summary?.total_invoices ?? 0)" icon="invoice" />
                 <MetricCard title="Total Customers" :value="String(qbStore.summary?.total_customers ?? 0)" icon="customers" />
-                <MetricCard title="Invoice Total" :value="formatCurrency(qbStore.summary?.invoice_total ?? 0)" icon="money" />
+                <MetricCard title="Open Balance" :value="formatCurrency(qbStore.summary?.outstanding_balance ?? 0)" icon="money" />
+                <MetricCard title="Total Invoiced" :value="formatCurrency(qbStore.summary?.invoice_total ?? 0)" icon="money" />
             </div>
 
             <div class="panel">
@@ -174,9 +188,11 @@
 
 <script lang="ts" setup>
 import { computed, onMounted, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import { useQuickBooksStore } from '@/stores/quickbooks';
 import { useToast } from '@/composables/use-toast';
 
+const router = useRouter();
 const qbStore = useQuickBooksStore();
 const { showToast, confirmDialog } = useToast();
 
@@ -188,6 +204,27 @@ const search = ref('');
 let searchTimer: ReturnType<typeof setTimeout>;
 
 const companyName = computed(() => qbStore.summary?.company?.name || qbStore.status?.company_name || 'QuickBooks Company');
+const activeClientName = computed(() => {
+    const status = qbStore.status;
+    if (!status) {
+        return null;
+    }
+    if (status.all_clients) {
+        return 'All clients';
+    }
+    const list = status.selected_clients ?? [];
+    if (list.length > 1) {
+        return `${list.length} clients`;
+    }
+    if (list.length === 1) {
+        return list[0].name ?? status.selected_client?.display_name ?? null;
+    }
+    return status.selected_client?.display_name ?? null;
+});
+
+function changeClient() {
+    router.push({ name: 'quickbooks-select-client', query: { change: '1' } });
+}
 
 async function connectQuickBooks() {
     connecting.value = true;
@@ -290,8 +327,13 @@ function statusBadge(status: string): string {
 
 onMounted(async () => {
     loadingStatus.value = true;
-    await qbStore.fetchStatus();
+    await qbStore.fetchStatus(true);
     loadingStatus.value = false;
+
+    if (qbStore.needsClientSelection) {
+        router.replace({ name: 'quickbooks-select-client' });
+        return;
+    }
 
     if (qbStore.isConnected) {
         await loadDashboard();

@@ -3,6 +3,16 @@ import axios from 'axios';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
+export interface QBSelectedClient {
+    qbo_id: string;
+    display_name: string;
+}
+
+export interface QBSelectedClientEntry {
+    qbo_id: string;
+    name: string | null;
+}
+
 export interface QBStatus {
     connected: boolean;
     role?: 'admin' | 'user';
@@ -11,6 +21,10 @@ export interface QBStatus {
     legal_name?: string | null;
     company_email?: string | null;
     country?: string | null;
+    needs_client_selection?: boolean;
+    all_clients?: boolean;
+    selected_clients?: QBSelectedClientEntry[];
+    selected_client?: QBSelectedClient | null;
     token_expires_at?: string;
     refresh_token_expires_at?: string;
     access_token_expired?: boolean;
@@ -26,6 +40,8 @@ export interface QBSummary {
     total_invoices: number;
     total_customers: number;
     invoice_total: number;
+    all_clients?: boolean;
+    selected_clients?: QBSelectedClientEntry[];
     last_synced_at: string | null;
     company?: {
         name: string | null;
@@ -112,6 +128,7 @@ interface QBState {
 export const useQuickBooksStore = defineStore('quickbooks', {
     state: (): QBState => ({
         status: null,
+        statusFetchedAt: null,
         summary: null,
         accounts: null,
         customers: null,
@@ -124,6 +141,12 @@ export const useQuickBooksStore = defineStore('quickbooks', {
 
     getters: {
         isConnected: (state): boolean => state.status?.connected === true,
+        // Client-selection step disabled: we now use ALL clients of the company
+        // selected at QuickBooks integration time. Force `false` so the app never
+        // redirects to /quickbooks/select-client. To re-enable, restore the line below.
+        // needsClientSelection: (state): boolean =>
+        //     state.status?.connected === true && state.status?.needs_client_selection === true,
+        needsClientSelection: (): boolean => false,
     },
 
     actions: {
@@ -149,6 +172,32 @@ export const useQuickBooksStore = defineStore('quickbooks', {
         async getConnectUrl(): Promise<string> {
             const { data } = await axios.get('/api/quickbooks/connect');
             return data.url as string;
+        },
+
+        async fetchSelectionClients(search?: string): Promise<{
+            company_name: string | null;
+            realm_id: string;
+            clients: Array<{ qbo_id: string; display_name: string; company_name: string | null }>;
+        }> {
+            const { data } = await axios.get('/api/quickbooks/selection/clients', {
+                params: search ? { search } : {},
+            });
+            return data;
+        },
+
+        async saveClientSelection(payload: {
+            clients?: Array<{ qbo_id: string; display_name: string }>;
+            selectAll?: boolean;
+        }): Promise<void> {
+            await axios.post('/api/quickbooks/selection/client', {
+                select_all: payload.selectAll ?? false,
+                clients: payload.clients ?? [],
+            });
+        },
+
+        async clearClientSelection(): Promise<void> {
+            await axios.delete('/api/quickbooks/selection/client');
+            await this.fetchStatus(true);
         },
 
         async fetchSummary(): Promise<void> {
