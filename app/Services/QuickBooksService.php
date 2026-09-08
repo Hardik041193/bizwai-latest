@@ -338,11 +338,11 @@ class QuickBooksService
      */
     public function syncInvoices(QuickBooksToken $token): int
     {
-        $maxResults = config('quickbooks.max_results', 1000);
-        $syncDays   = config('quickbooks.sync_days', 365);
-        $since      = now()->subDays($syncDays)->format('Y-m-d');
-
-        $rows   = $this->qbQuery($token, "SELECT * FROM Invoice WHERE MetaData.LastUpdatedTime >= '{$since}' MAXRESULTS {$maxResults}", 'Invoice');
+        $rows = $this->qbQuery(
+            $token,
+            $this->entityQuery('Invoice', QuickBooksInvoice::where('realm_id', $token->realm_id)->exists()),
+            'Invoice'
+        );
         $synced = 0;
 
         foreach ($rows as $invoice) {
@@ -396,11 +396,11 @@ class QuickBooksService
      */
     public function syncTransactions(QuickBooksToken $token): int
     {
-        $maxResults = config('quickbooks.max_results', 1000);
-        $syncDays   = config('quickbooks.sync_days', 365);
-        $since      = now()->subDays($syncDays)->format('Y-m-d');
-
-        $rows   = $this->qbQuery($token, "SELECT * FROM Purchase WHERE MetaData.LastUpdatedTime >= '{$since}' MAXRESULTS {$maxResults}", 'Purchase');
+        $rows = $this->qbQuery(
+            $token,
+            $this->entityQuery('Purchase', QuickBooksTransaction::where('realm_id', $token->realm_id)->exists()),
+            'Purchase'
+        );
         $synced = 0;
 
         foreach ($rows as $txn) {
@@ -512,6 +512,61 @@ class QuickBooksService
     }
 
     /**
+     * Find active QBO customers whose primary email matches the given address.
+     *
+     * Used to scope a freshly connected portal user to their own client record
+     * when they sign in with an email that exists in the connected company's
+     * customer list. IQL has no case-insensitive comparison and quoting an
+     * arbitrary address server-side is fragile, so the match is done in PHP.
+     *
+     * @return array<int, array{qbo_id: string, name: string}>
+     */
+    public function findCustomersByEmail(QuickBooksToken $token, string $email): array
+    {
+        $needle = mb_strtolower(trim($email));
+
+        if ($needle === '') {
+            return [];
+        }
+
+        $maxResults = min((int) config('quickbooks.max_results', 1000), 1000);
+
+        $rows = $this->qbQuery(
+            $token,
+            "SELECT * FROM Customer WHERE Active = true MAXRESULTS {$maxResults}",
+            'Customer'
+        );
+
+        $matches = [];
+
+        foreach ($rows as $customer) {
+            $customerEmail = $customer->PrimaryEmailAddr->Address ?? null;
+
+            if ($customerEmail === null || mb_strtolower(trim($customerEmail)) !== $needle) {
+                continue;
+            }
+
+            $name = $customer->DisplayName
+                ?? $customer->FullyQualifiedName
+                ?? $customer->CompanyName
+                ?? null;
+
+            if (! $name) {
+                continue;
+            }
+
+            // One address is often shared by several customer records
+            // (sub-customers, multiple sites), so every match is tracked.
+            $matches[] = [
+                'qbo_id' => (string) $customer->Id,
+                'name'   => $name,
+            ];
+        }
+
+        return $matches;
+    }
+
+    /**
      * Persist the client(s) the user chose after OAuth.
      *
      * Pass an empty array to track ALL clients (no filtering). Otherwise pass a
@@ -543,6 +598,32 @@ class QuickBooksService
     // ──────────────────────────────────────────────────────────────────────────
     // Helpers
     // ──────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Build the IQL used to sync a transactional entity.
+     *
+     * MetaData.LastUpdatedTime is the right cursor for an incremental sync, but
+     * it is wrong for a cold start: records last touched before the window are
+     * skipped entirely, so a realm whose invoices predate it syncs as empty and
+     * every derived figure (open balance, totals) reads zero. The first sync of
+     * a realm therefore pulls full history, and the window applies only once
+     * rows exist to keep later syncs cheap.
+     *
+     * @param  string  $entity            QBO entity name (e.g. 'Invoice', 'Purchase')
+     * @param  bool    $hasExistingRows   Whether this realm has already synced rows
+     */
+    private function entityQuery(string $entity, bool $hasExistingRows): string
+    {
+        $maxResults = config('quickbooks.max_results', 1000);
+
+        if (! $hasExistingRows) {
+            return "SELECT * FROM {$entity} MAXRESULTS {$maxResults}";
+        }
+
+        $since = now()->subDays((int) config('quickbooks.sync_days', 365))->format('Y-m-d');
+
+        return "SELECT * FROM {$entity} WHERE MetaData.LastUpdatedTime >= '{$since}' MAXRESULTS {$maxResults}";
+    }
 
     /**
      * Execute an IQL query against the QuickBooks REST API using JSON format.
