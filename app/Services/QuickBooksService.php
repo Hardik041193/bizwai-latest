@@ -338,11 +338,11 @@ class QuickBooksService
      */
     public function syncInvoices(QuickBooksToken $token): int
     {
-        $maxResults = config('quickbooks.max_results', 1000);
-        $syncDays   = config('quickbooks.sync_days', 365);
-        $since      = now()->subDays($syncDays)->format('Y-m-d');
-
-        $rows   = $this->qbQuery($token, "SELECT * FROM Invoice WHERE MetaData.LastUpdatedTime >= '{$since}' MAXRESULTS {$maxResults}", 'Invoice');
+        $rows = $this->qbQuery(
+            $token,
+            $this->entityQuery('Invoice', QuickBooksInvoice::where('realm_id', $token->realm_id)->exists()),
+            'Invoice'
+        );
         $synced = 0;
 
         foreach ($rows as $invoice) {
@@ -396,11 +396,11 @@ class QuickBooksService
      */
     public function syncTransactions(QuickBooksToken $token): int
     {
-        $maxResults = config('quickbooks.max_results', 1000);
-        $syncDays   = config('quickbooks.sync_days', 365);
-        $since      = now()->subDays($syncDays)->format('Y-m-d');
-
-        $rows   = $this->qbQuery($token, "SELECT * FROM Purchase WHERE MetaData.LastUpdatedTime >= '{$since}' MAXRESULTS {$maxResults}", 'Purchase');
+        $rows = $this->qbQuery(
+            $token,
+            $this->entityQuery('Purchase', QuickBooksTransaction::where('realm_id', $token->realm_id)->exists()),
+            'Purchase'
+        );
         $synced = 0;
 
         foreach ($rows as $txn) {
@@ -598,6 +598,32 @@ class QuickBooksService
     // ──────────────────────────────────────────────────────────────────────────
     // Helpers
     // ──────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Build the IQL used to sync a transactional entity.
+     *
+     * MetaData.LastUpdatedTime is the right cursor for an incremental sync, but
+     * it is wrong for a cold start: records last touched before the window are
+     * skipped entirely, so a realm whose invoices predate it syncs as empty and
+     * every derived figure (open balance, totals) reads zero. The first sync of
+     * a realm therefore pulls full history, and the window applies only once
+     * rows exist to keep later syncs cheap.
+     *
+     * @param  string  $entity            QBO entity name (e.g. 'Invoice', 'Purchase')
+     * @param  bool    $hasExistingRows   Whether this realm has already synced rows
+     */
+    private function entityQuery(string $entity, bool $hasExistingRows): string
+    {
+        $maxResults = config('quickbooks.max_results', 1000);
+
+        if (! $hasExistingRows) {
+            return "SELECT * FROM {$entity} MAXRESULTS {$maxResults}";
+        }
+
+        $since = now()->subDays((int) config('quickbooks.sync_days', 365))->format('Y-m-d');
+
+        return "SELECT * FROM {$entity} WHERE MetaData.LastUpdatedTime >= '{$since}' MAXRESULTS {$maxResults}";
+    }
 
     /**
      * Execute an IQL query against the QuickBooks REST API using JSON format.
