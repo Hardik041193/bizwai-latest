@@ -512,6 +512,61 @@ class QuickBooksService
     }
 
     /**
+     * Find active QBO customers whose primary email matches the given address.
+     *
+     * Used to scope a freshly connected portal user to their own client record
+     * when they sign in with an email that exists in the connected company's
+     * customer list. IQL has no case-insensitive comparison and quoting an
+     * arbitrary address server-side is fragile, so the match is done in PHP.
+     *
+     * @return array<int, array{qbo_id: string, name: string}>
+     */
+    public function findCustomersByEmail(QuickBooksToken $token, string $email): array
+    {
+        $needle = mb_strtolower(trim($email));
+
+        if ($needle === '') {
+            return [];
+        }
+
+        $maxResults = min((int) config('quickbooks.max_results', 1000), 1000);
+
+        $rows = $this->qbQuery(
+            $token,
+            "SELECT * FROM Customer WHERE Active = true MAXRESULTS {$maxResults}",
+            'Customer'
+        );
+
+        $matches = [];
+
+        foreach ($rows as $customer) {
+            $customerEmail = $customer->PrimaryEmailAddr->Address ?? null;
+
+            if ($customerEmail === null || mb_strtolower(trim($customerEmail)) !== $needle) {
+                continue;
+            }
+
+            $name = $customer->DisplayName
+                ?? $customer->FullyQualifiedName
+                ?? $customer->CompanyName
+                ?? null;
+
+            if (! $name) {
+                continue;
+            }
+
+            // One address is often shared by several customer records
+            // (sub-customers, multiple sites), so every match is tracked.
+            $matches[] = [
+                'qbo_id' => (string) $customer->Id,
+                'name'   => $name,
+            ];
+        }
+
+        return $matches;
+    }
+
+    /**
      * Persist the client(s) the user chose after OAuth.
      *
      * Pass an empty array to track ALL clients (no filtering). Otherwise pass a
