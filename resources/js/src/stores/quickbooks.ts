@@ -353,6 +353,21 @@ export const useQuickBooksStore = defineStore('quickbooks', {
         },
 
         /**
+         * Follow a sync that is already running (the OAuth callback dispatches
+         * one server-side) without queueing another.
+         */
+        async followSync(): Promise<void> {
+            this.syncing = true;
+            this.error = null;
+
+            try {
+                await this.pollSyncProgress();
+            } finally {
+                this.syncing = false;
+            }
+        },
+
+        /**
          * Poll until the sync finishes, or until the ceiling is hit.
          *
          * The ceiling exists so a worker that is not running, or one that died

@@ -61,9 +61,9 @@ class QuickBooksSyncStateTest extends TestCase
         $progress = State::progressFor($this->realm);
 
         $this->assertSame('syncing', $progress['status']);
-        $this->assertSame(40, $progress['progress']); // 2 of 5
+        $this->assertSame(33, $progress['progress']); // 2 of 6
         $this->assertSame(2, $progress['entities_finished']);
-        $this->assertSame(['customers', 'invoices', 'transactions'], $progress['pending_entities']);
+        $this->assertSame(['client_matching', 'customers', 'invoices', 'transactions'], $progress['pending_entities']);
     }
 
     public function test_a_clean_run_reports_complete(): void
@@ -87,7 +87,7 @@ class QuickBooksSyncStateTest extends TestCase
      */
     public function test_a_partial_run_still_reports_complete_so_the_ui_is_released(): void
     {
-        foreach (['company_info', 'accounts', 'customers', 'invoices'] as $entity) {
+        foreach (['company_info', 'client_matching', 'accounts', 'customers', 'invoices'] as $entity) {
             State::markComplete($this->realm, $entity, 5);
         }
         State::markFailed($this->realm, 'transactions', 'QuickBooks API error (401)');
@@ -129,6 +129,32 @@ class QuickBooksSyncStateTest extends TestCase
         $row = State::where('realm_id', $this->realm)->where('entity', 'invoices')->first();
 
         $this->assertSame(2000, mb_strlen($row->error));
+    }
+
+    /**
+     * When the entity list grows, realms synced before the new entity existed
+     * keep their old rows. Counting the missing entity as unfinished would make
+     * a cleanly finished realm report "syncing" forever and hang any poller.
+     */
+    public function test_an_entity_with_no_row_does_not_block_completion(): void
+    {
+        // Every entity except the newest one, as an older realm would have.
+        foreach (State::ENTITIES as $entity) {
+            if ($entity === 'client_matching') {
+                continue;
+            }
+            State::markComplete($this->realm, $entity, 5);
+        }
+
+        $progress = State::progressFor($this->realm);
+
+        $this->assertSame('complete', $progress['status']);
+        $this->assertTrue($progress['complete']);
+        $this->assertSame(100, $progress['progress']);
+
+        // Still listed, so the UI can show it, just not counted.
+        $row = collect($progress['entities'])->firstWhere('entity', 'client_matching');
+        $this->assertSame('idle', $row['status']);
     }
 
     public function test_state_is_scoped_per_realm(): void

@@ -15,6 +15,24 @@ use Illuminate\Database\Eloquent\Builder;
 class QuickBooksClientScope
 {
     /**
+     * Whether the caller's data scope has not been resolved yet.
+     *
+     * Client matching runs as part of the background sync, so between
+     * connecting and that entity completing a token has no selection at all.
+     * Returning "no filter" in that window would hand a client-scoped user the
+     * whole company's financials, so the scope fails closed instead: non-admins
+     * see nothing until their scope is known. Admins are unscoped by design.
+     */
+    private static function deniesEverything(QuickBooksToken $token): bool
+    {
+        if ($token->hasCompletedClientSelection()) {
+            return false;
+        }
+
+        return ! ($token->user?->isAdmin() ?? false);
+    }
+
+    /**
      * Apply the selected-client filter to a query that has a single
      * "name" column to match against (invoices.customer_name,
      * transactions.entity_name) and a customer_qbo_id column.
@@ -25,6 +43,12 @@ class QuickBooksClientScope
         string $qboIdColumn,
         string $nameColumn
     ): void {
+        if (self::deniesEverything($token)) {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
+
         if (! $token->hasSelectedClient()) {
             return;
         }
@@ -50,6 +74,12 @@ class QuickBooksClientScope
         string $nameColumnA,
         string $nameColumnB
     ): void {
+        if (self::deniesEverything($token)) {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
+
         if (! $token->hasSelectedClient()) {
             return;
         }

@@ -123,7 +123,7 @@ class QuickBooksSyncRunTest extends TestCase
         $counts = app(QuickBooksService::class)->syncAll($token);
 
         $this->assertSame(
-            ['company_info' => 1, 'accounts' => 2, 'customers' => 1, 'invoices' => 2, 'transactions' => 1],
+            ['company_info' => 1, 'client_matching' => 0, 'accounts' => 2, 'customers' => 1, 'invoices' => 2, 'transactions' => 1],
             $counts
         );
 
@@ -231,6 +231,61 @@ class QuickBooksSyncRunTest extends TestCase
         $this->assertSame(State::STATUS_COMPLETE, $rows['company_info']->status);
         $this->assertSame(State::STATUS_FAILED, $rows['invoices']->status);
         $this->assertTrue(State::progressFor($this->realm)['complete']);
+    }
+
+    public function test_client_matching_runs_as_a_tracked_entity_of_the_sync(): void
+    {
+        $this->fakeQuickBooks();
+        $token = $this->token();
+        // Matches a customer in the faked payload.
+        $token->user->update(['email' => 'ap@beta.test']);
+
+        app(QuickBooksService::class)->syncAll($token->fresh());
+
+        $row = State::where('realm_id', $this->realm)->where('entity', 'client_matching')->first();
+        $this->assertSame(State::STATUS_COMPLETE, $row->status);
+        $this->assertSame(1, $row->records_synced);
+
+        $token->refresh();
+        $this->assertTrue($token->hasCompletedClientSelection());
+        $this->assertSame('10', $token->selectedClientQboIds()[0]);
+    }
+
+    public function test_a_user_matching_no_customer_tracks_all_clients(): void
+    {
+        $this->fakeQuickBooks();
+        $token = $this->token();
+        $token->user->update(['email' => 'nobody@nowhere.test']);
+
+        app(QuickBooksService::class)->syncAll($token->fresh());
+
+        $token->refresh();
+        $this->assertTrue($token->hasCompletedClientSelection());
+        $this->assertTrue($token->isAllClientsSelected());
+    }
+
+    /**
+     * Client matching used to be wrapped in a catch that fell back to "all
+     * clients", so a transient API error silently granted a client-scoped user
+     * the whole company's financials. A failure must now leave the selection
+     * unresolved, which QuickBooksClientScope denies.
+     */
+    public function test_a_failed_client_match_does_not_silently_grant_full_access(): void
+    {
+        $this->fakeQuickBooks(['Customer' => 401]);
+        $token = $this->token();
+        $token->user->update(['email' => 'ap@beta.test']);
+
+        try {
+            app(QuickBooksService::class)->syncAll($token->fresh());
+        } catch (RuntimeException $e) {
+            // expected: the run reports failures
+        }
+
+        $row = State::where('realm_id', $this->realm)->where('entity', 'client_matching')->first();
+        $this->assertSame(State::STATUS_FAILED, $row->status);
+
+        $this->assertFalse($token->fresh()->hasCompletedClientSelection());
     }
 
     public function test_disconnecting_purges_sync_state_for_the_realm(): void

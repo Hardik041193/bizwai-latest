@@ -82,11 +82,17 @@ onMounted(async () => {
         return;
     }
 
-    // The OAuth callback only stores tokens + company info and redirects here
-    // immediately. Pull the full dataset (all clients) now, in the foreground,
-    // so the user gets a visible "syncing" state and a success confirmation.
+    // The OAuth callback now dispatches the sync itself, so follow that run
+    // rather than queueing a second one. If nothing is in flight (this URL was
+    // opened directly, or the callback found no token) start one instead.
     try {
-        await qbStore.triggerSync();
+        const progress = await qbStore.fetchSyncProgress();
+
+        if (!progress || progress.status === 'idle') {
+            await qbStore.triggerSync();
+        } else {
+            await qbStore.followSync();
+        }
 
         // triggerSync resolves on a partial sync too (some entities failed but
         // the run is over), so a clean resolve is not proof of success. Without

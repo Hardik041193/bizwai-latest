@@ -25,6 +25,7 @@ class QuickBooksSyncState extends Model
      */
     public const ENTITIES = [
         'company_info',
+        'client_matching',
         'accounts',
         'customers',
         'invoices',
@@ -36,6 +37,7 @@ class QuickBooksSyncState extends Model
      */
     public const LABELS = [
         'company_info' => 'Company profile',
+        'client_matching' => 'Client access',
         'accounts' => 'Chart of accounts',
         'customers' => 'Customers',
         'invoices' => 'Invoices',
@@ -170,6 +172,7 @@ class QuickBooksSyncState extends Model
         $rows = self::where('realm_id', $realmId)->get()->keyBy('entity');
 
         $entities = [];
+        $tracked = 0;
         $finished = 0;
         $failed = 0;
         $pending = [];
@@ -177,29 +180,41 @@ class QuickBooksSyncState extends Model
         foreach (self::ENTITIES as $entity) {
             /** @var self|null $row */
             $row = $rows->get($entity);
-            $status = $row?->status ?? self::STATUS_PENDING;
 
-            if ($row?->isFinished()) {
+            $entities[] = [
+                'entity' => $entity,
+                'label' => $row?->label() ?? (self::LABELS[$entity] ?? $entity),
+                'status' => $row?->status ?? 'idle',
+                'records_synced' => $row?->records_synced ?? 0,
+                'last_synced_at' => $row?->last_synced_at?->toIso8601String(),
+                'error' => $row?->error,
+            ];
+
+            // No row at all means this entity has never been part of a sync for
+            // this realm, which happens when the entity list grows: realms
+            // synced before it existed keep their old rows until the next run.
+            // Such an entity must not count towards completion, or a realm that
+            // finished cleanly would report "syncing" forever and any poller
+            // would hang. markQueued() creates a row for every entity, so a
+            // genuinely in-flight entity always has one.
+            if (! $row) {
+                continue;
+            }
+
+            $tracked++;
+
+            if ($row->isFinished()) {
                 $finished++;
             } else {
                 $pending[] = $entity;
             }
 
-            if ($status === self::STATUS_FAILED) {
+            if ($row->status === self::STATUS_FAILED) {
                 $failed++;
             }
-
-            $entities[] = [
-                'entity' => $entity,
-                'label' => $row?->label() ?? (self::LABELS[$entity] ?? $entity),
-                'status' => $row ? $status : 'idle',
-                'records_synced' => $row?->records_synced ?? 0,
-                'last_synced_at' => $row?->last_synced_at?->toIso8601String(),
-                'error' => $row?->error,
-            ];
         }
 
-        $total = count(self::ENTITIES);
+        $total = $tracked;
         $neverSynced = $rows->isEmpty();
 
         if ($neverSynced) {
@@ -219,7 +234,7 @@ class QuickBooksSyncState extends Model
             // true for "partial" too: a failed entity will not finish on its own
             // and leaving the spinner up would hang the UI forever.
             'complete' => in_array($overall, ['complete', 'partial'], true),
-            'progress' => $total > 0 ? (int) round($finished / $total * 100) : 100,
+            'progress' => $total > 0 ? (int) round($finished / $total * 100) : 0,
             'entities_total' => $total,
             'entities_finished' => $finished,
             'entities_failed' => $failed,

@@ -329,6 +329,51 @@ class QuickBooksService
     }
 
     /**
+     * Resolve and persist which clients the connected user may see.
+     *
+     * A non-admin who signs in with an email belonging to a customer of the
+     * connected company is scoped to that customer's records. Admins, and users
+     * whose email matches nothing, track all clients.
+     *
+     * This used to run inline in the OAuth callback, where a failure was caught
+     * and treated as "track all clients". That fails open: a transient API
+     * error during connect silently granted a client-scoped user the whole
+     * company's financials. It now runs as a tracked sync entity, and a failure
+     * leaves the selection incomplete, which QuickBooksClientScope denies.
+     *
+     * @return int number of clients the user is scoped to (0 = all clients)
+     */
+    public function syncClientMatching(QuickBooksToken $token): int
+    {
+        // Selection already made (or the user picked clients by hand).
+        if ($token->hasCompletedClientSelection()) {
+            return count($token->selectedClients());
+        }
+
+        $user = User::find($token->user_id);
+
+        if (! $user || $user->isAdmin() || empty($user->email)) {
+            $this->selectClients($token, []);
+
+            return 0;
+        }
+
+        // Deliberately not wrapped in try/catch: a failure must surface as a
+        // failed entity, not as an accidental grant of full access.
+        $matches = $this->findCustomersByEmail($token, $user->email);
+
+        if ($matches === []) {
+            Log::info('QuickBooks: no customer matched the user email; tracking all clients.', [
+                'user_id' => $token->user_id,
+            ]);
+        }
+
+        $this->selectClients($token, $matches);
+
+        return count($matches);
+    }
+
+    /**
      * Sync the Chart of Accounts from QBO.
      */
     public function syncAccounts(QuickBooksToken $token): int
@@ -503,7 +548,7 @@ class QuickBooksService
      * existing retry/backoff have another go; the sync methods are all
      * updateOrCreate, so a repeat run is safe.
      *
-     * @return array{company_info: int, accounts: int, customers: int, invoices: int, transactions: int}
+     * @return array{company_info: int, client_matching: int, accounts: int, customers: int, invoices: int, transactions: int}
      *
      * @throws RuntimeException if one or more entities failed
      */
@@ -511,6 +556,10 @@ class QuickBooksService
     {
         $operations = [
             'company_info' => fn () => $this->syncCompanyInfo($token),
+            // Must precede the data entities: until the scope is resolved a
+            // non-admin is denied all data, so resolving it first shortens the
+            // window in which the dashboard would read as empty.
+            'client_matching' => fn () => $this->syncClientMatching($token),
             'accounts' => fn () => $this->syncAccounts($token),
             'customers' => fn () => $this->syncCustomers($token),
             'invoices' => fn () => $this->syncInvoices($token),

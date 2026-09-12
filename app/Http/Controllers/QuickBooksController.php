@@ -9,7 +9,6 @@ use App\Models\QuickBooksInvoice;
 use App\Models\QuickBooksSyncState;
 use App\Models\QuickBooksToken;
 use App\Models\QuickBooksTransaction;
-use App\Models\User;
 use App\Services\QuickBooksService;
 use App\Support\QuickBooksClientScope;
 use Illuminate\Http\JsonResponse;
@@ -89,30 +88,19 @@ class QuickBooksController extends Controller
             return redirect("{$frontendBase}/quickbooks/error?message={$message}");
         }
 
-        // Sync only the lightweight company info here (one quick API call) and
-        // resolve which clients this user tracks. The full data sync
-        // (invoices/customers/transactions) is intentionally NOT run inline: it
-        // is heavy (~10-15s) and would make the post-OAuth redirect hang on a
-        // blank page. The frontend kicks it off right after landing on
-        // /quickbooks/connected, with a visible "syncing" state.
-        try {
-            $token = QuickBooksToken::where('user_id', $userId)->first();
-            if ($token) {
-                $this->quickBooks->syncCompanyInfo($token);
+        // Nothing else runs inline. Company info and client matching used to be
+        // called here, but they are QuickBooks API calls sitting inside Intuit's
+        // browser redirect, before any page of ours has loaded, so there is no
+        // spinner that can cover them. Client matching in particular queried up
+        // to 1000 customers. Both are now tracked entities of the background
+        // sync, behind the progress bar on /quickbooks/connected.
+        $token = QuickBooksToken::where('user_id', $userId)->first();
 
-                // Complete the selection step automatically: a user whose login
-                // email belongs to a customer of this company is scoped to that
-                // customer, everyone else tracks all clients (empty list).
-                if (! $token->hasCompletedClientSelection()) {
-                    $this->quickBooks->selectClients($token, $this->matchClientsForUser($token, $userId));
-                    $token->refresh();
-                }
-            }
-        } catch (\Throwable $e) {
-            Log::warning('QuickBooks company info sync after connect (non-fatal).', [
-                'user_id' => $userId,
-                'error' => $e->getMessage(),
-            ]);
+        if ($token) {
+            // Dispatched here rather than by the frontend so that closing the
+            // tab during the redirect no longer skips the sync entirely.
+            QuickBooksSyncState::markQueued($token->realm_id);
+            dispatch(new SyncQuickBooksDataJob($token->id));
         }
 
         return redirect("{$frontendBase}/quickbooks/connected");
@@ -328,44 +316,6 @@ class QuickBooksController extends Controller
     private function resolveToken(Request $request): ?QuickBooksToken
     {
         return $request->user()->quickBooksToken;
-    }
-
-    /**
-     * Clients to track for a freshly connected user.
-     *
-     * A non-admin who signs in with an email that belongs to a customer of the
-     * connected company is scoped to that customer's records. Admins, and users
-     * whose email matches nothing, track all clients (an empty list), which is
-     * the behaviour every connection had before matching existed.
-     *
-     * @return array<int, array{qbo_id: string, name: string}>
-     */
-    private function matchClientsForUser(QuickBooksToken $token, int $userId): array
-    {
-        $user = User::find($userId);
-
-        if (! $user || $user->isAdmin() || empty($user->email)) {
-            return [];
-        }
-
-        try {
-            $matches = $this->quickBooks->findCustomersByEmail($token, $user->email);
-        } catch (\Throwable $e) {
-            Log::warning('QuickBooks client match by email failed; tracking all clients.', [
-                'user_id' => $userId,
-                'error' => $e->getMessage(),
-            ]);
-
-            return [];
-        }
-
-        if ($matches === []) {
-            Log::info('QuickBooks connect: no customer matched the user email; tracking all clients.', [
-                'user_id' => $userId,
-            ]);
-        }
-
-        return $matches;
     }
 
     private function applySelectedClientToInvoices($query, QuickBooksToken $token): void
