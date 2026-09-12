@@ -27,12 +27,12 @@ class QuickBooksToken extends Model
     ];
 
     protected $casts = [
-        'access_token'              => 'encrypted',
-        'refresh_token'             => 'encrypted',
-        'token_expires_at'          => 'datetime',
-        'refresh_token_expires_at'  => 'datetime',
-        'client_selected_at'        => 'datetime',
-        'selected_clients'          => 'array',
+        'access_token' => 'encrypted',
+        'refresh_token' => 'encrypted',
+        'token_expires_at' => 'datetime',
+        'refresh_token_expires_at' => 'datetime',
+        'client_selected_at' => 'datetime',
+        'selected_clients' => 'array',
     ];
 
     /**
@@ -80,7 +80,7 @@ class QuickBooksToken extends Model
         if ($this->selected_client_qbo_id !== null) {
             return [[
                 'qbo_id' => $this->selected_client_qbo_id,
-                'name'   => $this->selected_client_name,
+                'name' => $this->selected_client_name,
             ]];
         }
 
@@ -88,7 +88,8 @@ class QuickBooksToken extends Model
     }
 
     /**
-     * Names of the selected clients, used to filter synced data by customer name.
+     * Names of the selected clients — legacy fallback filter for rows synced
+     * before customer_qbo_id existed, or that never carried a QBO id.
      *
      * @return array<int, string>
      */
@@ -96,6 +97,19 @@ class QuickBooksToken extends Model
     {
         return array_values(array_filter(array_map(
             fn ($client) => $client['name'] ?? null,
+            $this->selectedClients()
+        )));
+    }
+
+    /**
+     * QBO ids of the selected clients — the primary, rename-proof filter key.
+     *
+     * @return array<int, string>
+     */
+    public function selectedClientQboIds(): array
+    {
+        return array_values(array_filter(array_map(
+            fn ($client) => $client['qbo_id'] ?? null,
             $this->selectedClients()
         )));
     }

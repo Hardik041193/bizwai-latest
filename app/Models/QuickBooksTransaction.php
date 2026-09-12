@@ -15,6 +15,7 @@ class QuickBooksTransaction extends Model
         'txn_date',
         'account_name',
         'entity_name',
+        'customer_qbo_id',
         'amount',
         'description',
         'currency_ref',
@@ -22,8 +23,8 @@ class QuickBooksTransaction extends Model
     ];
 
     protected $casts = [
-        'txn_date'  => 'date',
-        'amount'    => 'decimal:2',
+        'txn_date' => 'date',
+        'amount' => 'decimal:2',
         'synced_at' => 'datetime',
     ];
 }

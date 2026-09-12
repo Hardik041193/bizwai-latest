@@ -12,7 +12,6 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use QuickBooksOnline\API\Core\OAuth\OAuth2\OAuth2LoginHelper;
 use QuickBooksOnline\API\DataService\DataService;
 use RuntimeException;
 
@@ -25,12 +24,12 @@ class QuickBooksService
     private function makeOAuthDataService(): DataService
     {
         return DataService::Configure([
-            'auth_mode'     => 'oauth2',
-            'ClientID'      => config('quickbooks.client_id'),
-            'ClientSecret'  => config('quickbooks.client_secret'),
-            'RedirectURI'   => config('quickbooks.redirect_uri'),
-            'scope'         => config('quickbooks.scope'),
-            'baseUrl'       => config('quickbooks.base_url'),
+            'auth_mode' => 'oauth2',
+            'ClientID' => config('quickbooks.client_id'),
+            'ClientSecret' => config('quickbooks.client_secret'),
+            'RedirectURI' => config('quickbooks.redirect_uri'),
+            'scope' => config('quickbooks.scope'),
+            'baseUrl' => config('quickbooks.base_url'),
         ]);
     }
 
@@ -42,15 +41,15 @@ class QuickBooksService
         $token = $this->refreshTokenIfNeeded($token);
 
         return DataService::Configure([
-            'auth_mode'       => 'oauth2',
-            'ClientID'        => config('quickbooks.client_id'),
-            'ClientSecret'    => config('quickbooks.client_secret'),
-            'RedirectURI'     => config('quickbooks.redirect_uri'),
-            'scope'           => config('quickbooks.scope'),
-            'baseUrl'         => config('quickbooks.base_url'),
-            'accessTokenKey'  => $token->access_token,
+            'auth_mode' => 'oauth2',
+            'ClientID' => config('quickbooks.client_id'),
+            'ClientSecret' => config('quickbooks.client_secret'),
+            'RedirectURI' => config('quickbooks.redirect_uri'),
+            'scope' => config('quickbooks.scope'),
+            'baseUrl' => config('quickbooks.base_url'),
+            'accessTokenKey' => $token->access_token,
             'refreshTokenKey' => $token->refresh_token,
-            'QBORealmID'      => $token->realm_id,
+            'QBORealmID' => $token->realm_id,
         ]);
     }
 
@@ -69,7 +68,7 @@ class QuickBooksService
         /** @var \QuickBooksOnline\API\Core\OAuth\OAuth2\OAuth2LoginHelper $helper */
         $helper = $dataService->getOAuth2LoginHelper();
 
-        $url   = $helper->getAuthorizationCodeURL();
+        $url = $helper->getAuthorizationCodeURL();
         $state = $helper->getState();
 
         // Cache for 15 minutes — more than enough for the user to complete OAuth.
@@ -93,12 +92,12 @@ class QuickBooksService
         $dataService = $this->makeOAuthDataService();
 
         /** @var \QuickBooksOnline\API\Core\OAuth\OAuth2\OAuth2LoginHelper $helper */
-        $helper      = $dataService->getOAuth2LoginHelper();
+        $helper = $dataService->getOAuth2LoginHelper();
         $accessToken = $helper->exchangeAuthorizationCodeForToken($code, $realmId);
 
         // SDK returns raw seconds from response (e.g. 3600 / 8726400).
         // Use safe defaults when the sandbox returns null or zero.
-        $accessExpiresIn  = (int) ($accessToken->getAccessTokenExpiresAt()  ?: 3600);
+        $accessExpiresIn = (int) ($accessToken->getAccessTokenExpiresAt() ?: 3600);
         $refreshExpiresIn = (int) ($accessToken->getRefreshTokenExpiresAt() ?: 8726400);
 
         return DB::transaction(function () use (
@@ -111,15 +110,15 @@ class QuickBooksService
             $token = QuickBooksToken::updateOrCreate(
                 ['user_id' => $userId],
                 [
-                    'realm_id'                  => $realmId,
-                    'access_token'              => $accessToken->getAccessToken(),
-                    'refresh_token'             => $accessToken->getRefreshToken(),
-                    'token_expires_at'          => now()->addSeconds($accessExpiresIn),
-                    'refresh_token_expires_at'  => now()->addSeconds($refreshExpiresIn),
-                    'selected_client_qbo_id'    => null,
-                    'selected_client_name'      => null,
-                    'selected_clients'          => null,
-                    'client_selected_at'          => null,
+                    'realm_id' => $realmId,
+                    'access_token' => $accessToken->getAccessToken(),
+                    'refresh_token' => $accessToken->getRefreshToken(),
+                    'token_expires_at' => now()->addSeconds($accessExpiresIn),
+                    'refresh_token_expires_at' => now()->addSeconds($refreshExpiresIn),
+                    'selected_client_qbo_id' => null,
+                    'selected_client_name' => null,
+                    'selected_clients' => null,
+                    'client_selected_at' => null,
                 ]
             );
 
@@ -164,28 +163,28 @@ class QuickBooksService
             }
 
             $dataService = DataService::Configure([
-                'auth_mode'       => 'oauth2',
-                'ClientID'        => config('quickbooks.client_id'),
-                'ClientSecret'    => config('quickbooks.client_secret'),
-                'RedirectURI'     => config('quickbooks.redirect_uri'),
-                'scope'           => config('quickbooks.scope'),
-                'baseUrl'         => config('quickbooks.base_url'),
-                'accessTokenKey'  => $fresh->access_token,
+                'auth_mode' => 'oauth2',
+                'ClientID' => config('quickbooks.client_id'),
+                'ClientSecret' => config('quickbooks.client_secret'),
+                'RedirectURI' => config('quickbooks.redirect_uri'),
+                'scope' => config('quickbooks.scope'),
+                'baseUrl' => config('quickbooks.base_url'),
+                'accessTokenKey' => $fresh->access_token,
                 'refreshTokenKey' => $fresh->refresh_token,
-                'QBORealmID'      => $fresh->realm_id,
+                'QBORealmID' => $fresh->realm_id,
             ]);
 
             /** @var \QuickBooksOnline\API\Core\OAuth\OAuth2\OAuth2LoginHelper $helper */
-            $helper   = $dataService->getOAuth2LoginHelper();
+            $helper = $dataService->getOAuth2LoginHelper();
             $newToken = $helper->refreshToken();
 
-            $accessExpiresIn  = (int) ($newToken->getAccessTokenExpiresAt()  ?: 3600);
+            $accessExpiresIn = (int) ($newToken->getAccessTokenExpiresAt() ?: 3600);
             $refreshExpiresIn = (int) ($newToken->getRefreshTokenExpiresAt() ?: 8726400);
 
             $fresh->update([
-                'access_token'             => $newToken->getAccessToken(),
-                'refresh_token'            => $newToken->getRefreshToken(),
-                'token_expires_at'         => now()->addSeconds($accessExpiresIn),
+                'access_token' => $newToken->getAccessToken(),
+                'refresh_token' => $newToken->getRefreshToken(),
+                'token_expires_at' => now()->addSeconds($accessExpiresIn),
                 'refresh_token_expires_at' => now()->addSeconds($refreshExpiresIn),
             ]);
 
@@ -217,25 +216,34 @@ class QuickBooksService
         } catch (\Throwable $e) {
             Log::warning('QuickBooks token revocation failed (token may already be invalid).', [
                 'user_id' => $userId,
-                'error'   => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
         }
 
-        // Delete token first, then purge all synced data for this realm.
-        // This prevents a race where another request could still use the realm_id.
+        // Delete token first, then check whether any OTHER user's token still
+        // references this realm before purging synced data. Multiple portal
+        // users can be connected to the same QuickBooks company (realm), so
+        // purging unconditionally here would delete data still needed by them.
         $token->delete();
 
-        QuickBooksAccount::where('realm_id', $realmId)->delete();
-        QuickBooksCustomer::where('realm_id', $realmId)->delete();
-        QuickBooksInvoice::where('realm_id', $realmId)->delete();
-        QuickBooksTransaction::where('realm_id', $realmId)->delete();
+        if (QuickBooksToken::where('realm_id', $realmId)->exists()) {
+            Log::info('QuickBooks: skipped data purge — another user is still connected to this realm.', [
+                'user_id' => $userId,
+                'realm_id' => $realmId,
+            ]);
+        } else {
+            QuickBooksAccount::where('realm_id', $realmId)->delete();
+            QuickBooksCustomer::where('realm_id', $realmId)->delete();
+            QuickBooksInvoice::where('realm_id', $realmId)->delete();
+            QuickBooksTransaction::where('realm_id', $realmId)->delete();
+
+            Log::info('QuickBooks: synced data purged after disconnect.', [
+                'user_id' => $userId,
+                'realm_id' => $realmId,
+            ]);
+        }
 
         User::find($userId)?->markQuickBooksDisconnected();
-
-        Log::info('QuickBooks: synced data purged after disconnect.', [
-            'user_id'  => $userId,
-            'realm_id' => $realmId,
-        ]);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -259,10 +267,10 @@ class QuickBooksService
         $companyName = $company->CompanyName ?? $company->LegalName ?? null;
 
         $token->update([
-            'company_name'  => $companyName,
-            'legal_name'    => $company->LegalName ?? null,
+            'company_name' => $companyName,
+            'legal_name' => $company->LegalName ?? null,
             'company_email' => $company->Email->Address ?? null,
-            'country'       => $company->Country ?? null,
+            'country' => $company->Country ?? null,
         ]);
 
         if ($companyName && $token->user_id) {
@@ -278,21 +286,21 @@ class QuickBooksService
     public function syncAccounts(QuickBooksToken $token): int
     {
         $maxResults = config('quickbooks.max_results', 1000);
-        $rows       = $this->qbQuery($token, "SELECT * FROM Account MAXRESULTS {$maxResults}", 'Account');
-        $synced     = 0;
+        $rows = $this->qbQuery($token, "SELECT * FROM Account MAXRESULTS {$maxResults}", 'Account');
+        $synced = 0;
 
         foreach ($rows as $account) {
             QuickBooksAccount::updateOrCreate(
                 ['realm_id' => $token->realm_id, 'qbo_id' => $account->Id],
                 [
-                    'name'             => $account->Name ?? null,
-                    'account_type'     => $account->AccountType ?? null,
+                    'name' => $account->Name ?? null,
+                    'account_type' => $account->AccountType ?? null,
                     'account_sub_type' => $account->AccountSubType ?? null,
-                    'classification'   => $account->Classification ?? null,
-                    'current_balance'  => $account->CurrentBalance ?? 0,
-                    'currency_ref'     => $account->CurrencyRef->value ?? null,
-                    'active'           => (bool) ($account->Active ?? true),
-                    'synced_at'        => now(),
+                    'classification' => $account->Classification ?? null,
+                    'current_balance' => $account->CurrentBalance ?? 0,
+                    'currency_ref' => $account->CurrencyRef->value ?? null,
+                    'active' => (bool) ($account->Active ?? true),
+                    'synced_at' => now(),
                 ]
             );
             $synced++;
@@ -309,8 +317,8 @@ class QuickBooksService
     public function syncCustomers(QuickBooksToken $token): int
     {
         $maxResults = config('quickbooks.max_results', 1000);
-        $rows       = $this->qbQuery($token, "SELECT * FROM Customer MAXRESULTS {$maxResults}", 'Customer');
-        $synced     = 0;
+        $rows = $this->qbQuery($token, "SELECT * FROM Customer MAXRESULTS {$maxResults}", 'Customer');
+        $synced = 0;
 
         foreach ($rows as $customer) {
             QuickBooksCustomer::updateOrCreate(
@@ -318,11 +326,11 @@ class QuickBooksService
                 [
                     'display_name' => $customer->DisplayName ?? $customer->FullyQualifiedName ?? null,
                     'company_name' => $customer->CompanyName ?? null,
-                    'email'        => $customer->PrimaryEmailAddr->Address ?? null,
-                    'phone'        => $customer->PrimaryPhone->FreeFormNumber ?? null,
-                    'balance'      => $customer->Balance ?? 0,
-                    'active'       => (bool) ($customer->Active ?? true),
-                    'synced_at'    => now(),
+                    'email' => $customer->PrimaryEmailAddr->Address ?? null,
+                    'phone' => $customer->PrimaryPhone->FreeFormNumber ?? null,
+                    'balance' => $customer->Balance ?? 0,
+                    'active' => (bool) ($customer->Active ?? true),
+                    'synced_at' => now(),
                 ]
             );
             $synced++;
@@ -352,10 +360,10 @@ class QuickBooksService
                 if (isset($line->SalesItemLineDetail)) {
                     $lineItems[] = [
                         'description' => $line->Description ?? null,
-                        'quantity'    => $line->SalesItemLineDetail->Qty ?? null,
-                        'unit_price'  => $line->SalesItemLineDetail->UnitPrice ?? null,
-                        'amount'      => $line->Amount ?? 0,
-                        'item_name'   => $line->SalesItemLineDetail->ItemRef->name ?? null,
+                        'quantity' => $line->SalesItemLineDetail->Qty ?? null,
+                        'unit_price' => $line->SalesItemLineDetail->UnitPrice ?? null,
+                        'amount' => $line->Amount ?? 0,
+                        'item_name' => $line->SalesItemLineDetail->ItemRef->name ?? null,
                     ];
                 }
             }
@@ -370,17 +378,18 @@ class QuickBooksService
             QuickBooksInvoice::updateOrCreate(
                 ['realm_id' => $token->realm_id, 'qbo_id' => $invoice->Id],
                 [
-                    'doc_number'     => $invoice->DocNumber ?? null,
-                    'customer_name'  => $invoice->CustomerRef->name ?? null,
+                    'doc_number' => $invoice->DocNumber ?? null,
+                    'customer_name' => $invoice->CustomerRef->name ?? null,
+                    'customer_qbo_id' => $invoice->CustomerRef->value ?? null,
                     'customer_email' => $invoice->BillEmail->Address ?? null,
-                    'txn_date'       => $invoice->TxnDate ?? null,
-                    'due_date'       => $invoice->DueDate ?? null,
-                    'total_amount'   => $invoice->TotalAmt ?? 0,
-                    'balance'        => $invoice->Balance ?? 0,
-                    'status'         => $status,
-                    'currency_ref'   => $invoice->CurrencyRef->value ?? null,
-                    'line_items'     => $lineItems,
-                    'synced_at'      => now(),
+                    'txn_date' => $invoice->TxnDate ?? null,
+                    'due_date' => $invoice->DueDate ?? null,
+                    'total_amount' => $invoice->TotalAmt ?? 0,
+                    'balance' => $invoice->Balance ?? 0,
+                    'status' => $status,
+                    'currency_ref' => $invoice->CurrencyRef->value ?? null,
+                    'line_items' => $lineItems,
+                    'synced_at' => now(),
                 ]
             );
             $synced++;
@@ -405,12 +414,12 @@ class QuickBooksService
 
         foreach ($rows as $txn) {
             $accountName = null;
-            $amount      = 0;
+            $amount = 0;
 
             foreach ((array) ($txn->Line ?? []) as $line) {
                 if (isset($line->AccountBasedExpenseLineDetail)) {
                     $accountName = $line->AccountBasedExpenseLineDetail->AccountRef->name ?? null;
-                    $amount      = $line->Amount ?? 0;
+                    $amount = $line->Amount ?? 0;
                     break;
                 }
             }
@@ -418,14 +427,15 @@ class QuickBooksService
             QuickBooksTransaction::updateOrCreate(
                 ['realm_id' => $token->realm_id, 'qbo_id' => $txn->Id],
                 [
-                    'txn_type'     => $txn->PaymentType ?? 'Purchase',
-                    'txn_date'     => $txn->TxnDate ?? null,
+                    'txn_type' => $txn->PaymentType ?? 'Purchase',
+                    'txn_date' => $txn->TxnDate ?? null,
                     'account_name' => $accountName,
-                    'entity_name'  => $txn->EntityRef->name ?? null,
-                    'amount'       => $txn->TotalAmt ?? $amount,
-                    'description'  => $txn->PrivateNote ?? null,
+                    'entity_name' => $txn->EntityRef->name ?? null,
+                    'customer_qbo_id' => $txn->EntityRef->value ?? null,
+                    'amount' => $txn->TotalAmt ?? $amount,
+                    'description' => $txn->PrivateNote ?? null,
                     'currency_ref' => $txn->CurrencyRef->value ?? null,
-                    'synced_at'    => now(),
+                    'synced_at' => now(),
                 ]
             );
             $synced++;
@@ -445,9 +455,9 @@ class QuickBooksService
     {
         return [
             'company_info' => $this->syncCompanyInfo($token),
-            'accounts'     => $this->syncAccounts($token),
-            'customers'    => $this->syncCustomers($token),
-            'invoices'     => $this->syncInvoices($token),
+            'accounts' => $this->syncAccounts($token),
+            'customers' => $this->syncCustomers($token),
+            'invoices' => $this->syncInvoices($token),
             'transactions' => $this->syncTransactions($token),
         ];
     }
@@ -472,7 +482,7 @@ class QuickBooksService
             'Customer'
         );
 
-        $term    = $search !== null ? mb_strtolower(trim($search)) : '';
+        $term = $search !== null ? mb_strtolower(trim($search)) : '';
         $clients = [];
 
         foreach ($rows as $customer) {
@@ -500,7 +510,7 @@ class QuickBooksService
             }
 
             $clients[] = [
-                'qbo_id'       => (string) $customer->Id,
+                'qbo_id' => (string) $customer->Id,
                 'display_name' => $displayName,
                 'company_name' => $companyName,
             ];
@@ -559,7 +569,7 @@ class QuickBooksService
             // (sub-customers, multiple sites), so every match is tracked.
             $matches[] = [
                 'qbo_id' => (string) $customer->Id,
-                'name'   => $name,
+                'name' => $name,
             ];
         }
 
@@ -580,16 +590,16 @@ class QuickBooksService
         // sync (first client, or null for "all") for backward compatibility.
         $normalised = array_values(array_map(fn ($c) => [
             'qbo_id' => (string) $c['qbo_id'],
-            'name'   => $c['name'] ?? null,
+            'name' => $c['name'] ?? null,
         ], $clients));
 
         $first = $normalised[0] ?? null;
 
         $token->update([
-            'selected_clients'       => $normalised,
+            'selected_clients' => $normalised,
             'selected_client_qbo_id' => $first['qbo_id'] ?? null,
-            'selected_client_name'   => $first['name'] ?? null,
-            'client_selected_at'     => now(),
+            'selected_client_name' => $first['name'] ?? null,
+            'client_selected_at' => now(),
         ]);
 
         return $token->fresh();
@@ -609,8 +619,8 @@ class QuickBooksService
      * a realm therefore pulls full history, and the window applies only once
      * rows exist to keep later syncs cheap.
      *
-     * @param  string  $entity            QBO entity name (e.g. 'Invoice', 'Purchase')
-     * @param  bool    $hasExistingRows   Whether this realm has already synced rows
+     * @param  string  $entity  QBO entity name (e.g. 'Invoice', 'Purchase')
+     * @param  bool  $hasExistingRows  Whether this realm has already synced rows
      */
     private function entityQuery(string $entity, bool $hasExistingRows): string
     {
@@ -631,16 +641,15 @@ class QuickBooksService
      * Bypasses the SDK's DataService::Query() which requires SimpleXML/DOMDocument.
      * Returns an array of stdClass objects matching the requested entity type.
      *
-     * @param  QuickBooksToken  $token
-     * @param  string  $query       IQL query string (e.g. "SELECT * FROM Account")
-     * @param  string  $entityKey   JSON response key (e.g. 'Account', 'Invoice', 'Purchase')
+     * @param  string  $query  IQL query string (e.g. "SELECT * FROM Account")
+     * @param  string  $entityKey  JSON response key (e.g. 'Account', 'Invoice', 'Purchase')
      * @return array<\stdClass>
      *
      * @throws RuntimeException on HTTP or API error
      */
     private function qbQuery(QuickBooksToken $token, string $query, string $entityKey): array
     {
-        $token   = $this->refreshTokenIfNeeded($token);
+        $token = $this->refreshTokenIfNeeded($token);
         $baseUrl = config('quickbooks.base_url') === 'Production'
             ? 'https://quickbooks.api.intuit.com'
             : 'https://sandbox-quickbooks.api.intuit.com';
@@ -649,13 +658,13 @@ class QuickBooksService
         $response = Http::withToken($token->access_token)
             ->accept('application/json')
             ->get("{$baseUrl}/v3/company/{$token->realm_id}/query", [
-                'query'        => $query,
+                'query' => $query,
                 'minorversion' => '65',
             ]);
 
         if ($response->failed()) {
             throw new RuntimeException(
-                "QuickBooks API error ({$response->status()}): " . $response->body()
+                "QuickBooks API error ({$response->status()}): ".$response->body()
             );
         }
 
@@ -674,7 +683,7 @@ class QuickBooksService
 
         if ($error) {
             throw new RuntimeException(
-                'QuickBooks API error: ' . $error->getResponseBody()
+                'QuickBooks API error: '.$error->getResponseBody()
             );
         }
     }
