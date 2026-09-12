@@ -20,6 +20,12 @@ use RuntimeException;
 class QuickBooksService
 {
     /**
+     * Safety ceiling on pages per query: 1000 records each, so 200k records.
+     * Far above any realistic realm, and a bound on a misbehaving response.
+     */
+    private const MAX_PAGES = 200;
+
+    /**
      * Build a DataService instance for authorization URL generation only
      * (no realm_id needed at this stage).
      */
@@ -378,8 +384,7 @@ class QuickBooksService
      */
     public function syncAccounts(QuickBooksToken $token): int
     {
-        $maxResults = config('quickbooks.max_results', 1000);
-        $rows = $this->qbQuery($token, "SELECT * FROM Account MAXRESULTS {$maxResults}", 'Account');
+        $rows = $this->qbQuery($token, 'SELECT * FROM Account', 'Account');
         $synced = 0;
 
         foreach ($rows as $account) {
@@ -409,8 +414,7 @@ class QuickBooksService
      */
     public function syncCustomers(QuickBooksToken $token): int
     {
-        $maxResults = config('quickbooks.max_results', 1000);
-        $rows = $this->qbQuery($token, "SELECT * FROM Customer MAXRESULTS {$maxResults}", 'Customer');
+        $rows = $this->qbQuery($token, 'SELECT * FROM Customer', 'Customer');
         $synced = 0;
 
         foreach ($rows as $customer) {
@@ -608,11 +612,9 @@ class QuickBooksService
         // server-side. Fetch the active customers and filter across fields in PHP,
         // which also avoids fragile manual quote-escaping of the search term
         // (IQL escapes single quotes by doubling them, not with a backslash).
-        $maxResults = min((int) config('quickbooks.max_results', 1000), 1000);
-
         $rows = $this->qbQuery(
             $token,
-            "SELECT Id, DisplayName, CompanyName, FullyQualifiedName FROM Customer WHERE Active = true MAXRESULTS {$maxResults}",
+            'SELECT Id, DisplayName, CompanyName, FullyQualifiedName FROM Customer WHERE Active = true',
             'Customer'
         );
 
@@ -673,11 +675,9 @@ class QuickBooksService
             return [];
         }
 
-        $maxResults = min((int) config('quickbooks.max_results', 1000), 1000);
-
         $rows = $this->qbQuery(
             $token,
-            "SELECT * FROM Customer WHERE Active = true MAXRESULTS {$maxResults}",
+            'SELECT * FROM Customer WHERE Active = true',
             'Customer'
         );
 
@@ -758,25 +758,31 @@ class QuickBooksService
      */
     private function entityQuery(string $entity, bool $hasExistingRows): string
     {
-        $maxResults = config('quickbooks.max_results', 1000);
-
         if (! $hasExistingRows) {
-            return "SELECT * FROM {$entity} MAXRESULTS {$maxResults}";
+            return "SELECT * FROM {$entity}";
         }
 
         $since = now()->subDays((int) config('quickbooks.sync_days', 365))->format('Y-m-d');
 
-        return "SELECT * FROM {$entity} WHERE MetaData.LastUpdatedTime >= '{$since}' MAXRESULTS {$maxResults}";
+        return "SELECT * FROM {$entity} WHERE MetaData.LastUpdatedTime >= '{$since}'";
     }
 
     /**
-     * Execute an IQL query against the QuickBooks REST API using JSON format.
+     * Execute an IQL query against the QuickBooks REST API, following pagination.
+     *
+     * QuickBooks caps a single response at 1000 records. Previously every query
+     * appended its own MAXRESULTS and took whatever came back, so any realm with
+     * more than 1000 invoices, customers or accounts was silently truncated: no
+     * error, no warning, just missing rows and wrong totals everywhere
+     * downstream. This now walks STARTPOSITION until a short page arrives.
+     *
+     * Callers pass the query WITHOUT a STARTPOSITION or MAXRESULTS clause; this
+     * method owns paging so no caller can opt out of it by accident.
      *
      * Bypasses the SDK's DataService::Query() which requires SimpleXML/DOMDocument.
-     * Returns an array of stdClass objects matching the requested entity type.
      *
-     * @param  string  $query  IQL query string (e.g. "SELECT * FROM Account")
-     * @param  string  $entityKey  JSON response key (e.g. 'Account', 'Invoice', 'Purchase')
+     * @param  string  $query  IQL query (e.g. "SELECT * FROM Account")
+     * @param  string  $entityKey  JSON response key (e.g. 'Account', 'Invoice')
      * @return array<\stdClass>
      *
      * @throws RuntimeException on HTTP or API error
@@ -784,27 +790,68 @@ class QuickBooksService
     private function qbQuery(QuickBooksToken $token, string $query, string $entityKey): array
     {
         $token = $this->refreshTokenIfNeeded($token);
+
         $baseUrl = config('quickbooks.base_url') === 'Production'
             ? 'https://quickbooks.api.intuit.com'
             : 'https://sandbox-quickbooks.api.intuit.com';
 
-        // GET with URL-encoded query param — avoids POST body parsing issues.
-        $response = Http::withToken($token->access_token)
-            ->accept('application/json')
-            ->get("{$baseUrl}/v3/company/{$token->realm_id}/query", [
-                'query' => $query,
-                'minorversion' => '65',
-            ]);
+        // QuickBooks refuses anything above 1000 per page.
+        $pageSize = max(1, min((int) config('quickbooks.max_results', 1000), 1000));
 
-        if ($response->failed()) {
-            throw new RuntimeException(
-                "QuickBooks API error ({$response->status()}): ".$response->body()
-            );
+        // IQL uses 1-based positions.
+        $startPosition = 1;
+        $results = [];
+        $pages = 0;
+
+        do {
+            $paged = "{$query} STARTPOSITION {$startPosition} MAXRESULTS {$pageSize}";
+
+            // GET with URL-encoded query param — avoids POST body parsing issues.
+            $response = Http::withToken($token->access_token)
+                ->accept('application/json')
+                ->get("{$baseUrl}/v3/company/{$token->realm_id}/query", [
+                    'query' => $paged,
+                    'minorversion' => '65',
+                ]);
+
+            if ($response->failed()) {
+                throw new RuntimeException(
+                    "QuickBooks API error ({$response->status()}): ".$response->body()
+                );
+            }
+
+            $page = (array) ($response->object()->QueryResponse->{$entityKey} ?? []);
+            $results = array_merge($results, $page);
+
+            $startPosition += $pageSize;
+            $pages++;
+
+            // A short page means the last one. The page cap is a guard against a
+            // server that keeps returning full pages forever; without it a bad
+            // response would spin until the job timed out.
+            if (count($page) < $pageSize) {
+                break;
+            }
+
+            if ($pages >= self::MAX_PAGES) {
+                Log::warning('QuickBooks: hit the page ceiling, results may be incomplete.', [
+                    'realm_id' => $token->realm_id,
+                    'entity' => $entityKey,
+                    'pages' => $pages,
+                    'records' => count($results),
+                ]);
+
+                break;
+            }
+        } while (true);
+
+        if ($pages > 1) {
+            Log::info("QuickBooks: paged {$entityKey} over {$pages} requests for realm {$token->realm_id}.", [
+                'records' => count($results),
+            ]);
         }
 
-        $data = $response->object();
-
-        return (array) ($data->QueryResponse->{$entityKey} ?? []);
+        return $results;
     }
 
     /**
