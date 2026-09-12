@@ -1,0 +1,230 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class QuickBooksSyncState extends Model
+{
+    protected $table = 'quickbooks_sync_states';
+
+    public const STATUS_PENDING = 'pending';
+
+    public const STATUS_SYNCING = 'syncing';
+
+    public const STATUS_COMPLETE = 'complete';
+
+    public const STATUS_FAILED = 'failed';
+
+    /**
+     * Entities tracked for a realm, in the order they are synced.
+     *
+     * Ordering matters for the progress UI: company_info resolves first so the
+     * company name appears immediately, then the entities the dashboard needs.
+     * R3 appends bills, payments, sales_receipts and the rest here.
+     */
+    public const ENTITIES = [
+        'company_info',
+        'accounts',
+        'customers',
+        'invoices',
+        'transactions',
+    ];
+
+    /**
+     * Human labels for the progress UI, keyed by entity.
+     */
+    public const LABELS = [
+        'company_info' => 'Company profile',
+        'accounts' => 'Chart of accounts',
+        'customers' => 'Customers',
+        'invoices' => 'Invoices',
+        'transactions' => 'Expenses',
+    ];
+
+    protected $fillable = [
+        'realm_id',
+        'entity',
+        'status',
+        'records_synced',
+        'start_position',
+        'started_at',
+        'last_synced_at',
+        'error',
+    ];
+
+    protected $casts = [
+        'records_synced' => 'integer',
+        'start_position' => 'integer',
+        'started_at' => 'datetime',
+        'last_synced_at' => 'datetime',
+    ];
+
+    public function label(): string
+    {
+        return self::LABELS[$this->entity] ?? ucfirst(str_replace('_', ' ', $this->entity));
+    }
+
+    public function isFinished(): bool
+    {
+        return in_array($this->status, [self::STATUS_COMPLETE, self::STATUS_FAILED], true);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // State transitions
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * Mark every tracked entity for a realm as queued.
+     *
+     * Called synchronously when a sync is requested, before the job is
+     * dispatched, so the frontend's first poll already sees work in progress.
+     * Without this the poll can land in the gap before a worker picks the job
+     * up, read the previous run's "complete" rows, and stop polling while the
+     * new sync has not started, which is the exact bug the progress endpoint
+     * exists to prevent.
+     */
+    public static function markQueued(string $realmId): void
+    {
+        foreach (self::ENTITIES as $entity) {
+            self::updateOrCreate(
+                ['realm_id' => $realmId, 'entity' => $entity],
+                [
+                    'status' => self::STATUS_PENDING,
+                    'started_at' => null,
+                    'error' => null,
+                ]
+            );
+        }
+    }
+
+    public static function markSyncing(string $realmId, string $entity): void
+    {
+        self::updateOrCreate(
+            ['realm_id' => $realmId, 'entity' => $entity],
+            [
+                'status' => self::STATUS_SYNCING,
+                'started_at' => now(),
+                'error' => null,
+            ]
+        );
+    }
+
+    public static function markComplete(string $realmId, string $entity, int $records): void
+    {
+        self::updateOrCreate(
+            ['realm_id' => $realmId, 'entity' => $entity],
+            [
+                'status' => self::STATUS_COMPLETE,
+                'records_synced' => $records,
+                'last_synced_at' => now(),
+                'start_position' => null,
+                'error' => null,
+            ]
+        );
+    }
+
+    public static function markFailed(string $realmId, string $entity, string $error): void
+    {
+        self::updateOrCreate(
+            ['realm_id' => $realmId, 'entity' => $entity],
+            [
+                'status' => self::STATUS_FAILED,
+                // Column is TEXT but QBO error bodies can be long, so cap it.
+                'error' => mb_substr($error, 0, 2000),
+            ]
+        );
+    }
+
+    /**
+     * Any entity left mid-flight is failed, used when a job dies without
+     * reaching the per-entity error handler (timeout, worker restart, OOM).
+     */
+    public static function failUnfinished(string $realmId, string $error): void
+    {
+        self::where('realm_id', $realmId)
+            ->whereIn('status', [self::STATUS_PENDING, self::STATUS_SYNCING])
+            ->update([
+                'status' => self::STATUS_FAILED,
+                'error' => mb_substr($error, 0, 2000),
+                'updated_at' => now(),
+            ]);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Progress reporting
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * Progress snapshot for a realm, shaped for both the frontend poller and
+     * the AI context.
+     *
+     * `status` is the realm-level rollup:
+     *   idle     — never synced
+     *   syncing  — at least one entity pending or in flight
+     *   partial  — everything finished but something failed
+     *   complete — everything finished cleanly
+     */
+    public static function progressFor(string $realmId): array
+    {
+        $rows = self::where('realm_id', $realmId)->get()->keyBy('entity');
+
+        $entities = [];
+        $finished = 0;
+        $failed = 0;
+        $pending = [];
+
+        foreach (self::ENTITIES as $entity) {
+            /** @var self|null $row */
+            $row = $rows->get($entity);
+            $status = $row?->status ?? self::STATUS_PENDING;
+
+            if ($row?->isFinished()) {
+                $finished++;
+            } else {
+                $pending[] = $entity;
+            }
+
+            if ($status === self::STATUS_FAILED) {
+                $failed++;
+            }
+
+            $entities[] = [
+                'entity' => $entity,
+                'label' => $row?->label() ?? (self::LABELS[$entity] ?? $entity),
+                'status' => $row ? $status : 'idle',
+                'records_synced' => $row?->records_synced ?? 0,
+                'last_synced_at' => $row?->last_synced_at?->toIso8601String(),
+                'error' => $row?->error,
+            ];
+        }
+
+        $total = count(self::ENTITIES);
+        $neverSynced = $rows->isEmpty();
+
+        if ($neverSynced) {
+            $overall = 'idle';
+        } elseif ($finished < $total) {
+            $overall = 'syncing';
+        } elseif ($failed > 0) {
+            $overall = 'partial';
+        } else {
+            $overall = 'complete';
+        }
+
+        return [
+            'entities' => $entities,
+            'status' => $overall,
+            // The frontend clears its spinner on this flag alone, so it must be
+            // true for "partial" too: a failed entity will not finish on its own
+            // and leaving the spinner up would hang the UI forever.
+            'complete' => in_array($overall, ['complete', 'partial'], true),
+            'progress' => $total > 0 ? (int) round($finished / $total * 100) : 100,
+            'entities_total' => $total,
+            'entities_finished' => $finished,
+            'entities_failed' => $failed,
+            'pending_entities' => $pending,
+            'last_synced_at' => $rows->max('last_synced_at')?->toIso8601String(),
+        ];
+    }
+}

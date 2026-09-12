@@ -5,9 +5,11 @@ namespace App\Services;
 use App\Models\QuickBooksAccount;
 use App\Models\QuickBooksCustomer;
 use App\Models\QuickBooksInvoice;
+use App\Models\QuickBooksSyncState;
 use App\Models\QuickBooksToken;
 use App\Models\QuickBooksTransaction;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -95,17 +97,19 @@ class QuickBooksService
         $helper = $dataService->getOAuth2LoginHelper();
         $accessToken = $helper->exchangeAuthorizationCodeForToken($code, $realmId);
 
-        // SDK returns raw seconds from response (e.g. 3600 / 8726400).
-        // Use safe defaults when the sandbox returns null or zero.
-        $accessExpiresIn = (int) ($accessToken->getAccessTokenExpiresAt() ?: 3600);
-        $refreshExpiresIn = (int) ($accessToken->getRefreshTokenExpiresAt() ?: 8726400);
+        $accessExpiresAt = $this->resolveExpiry(
+            fn () => $accessToken->getAccessTokenExpiresAt(), 3600
+        );
+        $refreshExpiresAt = $this->resolveExpiry(
+            fn () => $accessToken->getRefreshTokenExpiresAt(), 8726400
+        );
 
         return DB::transaction(function () use (
             $userId,
             $realmId,
             $accessToken,
-            $accessExpiresIn,
-            $refreshExpiresIn
+            $accessExpiresAt,
+            $refreshExpiresAt
         ) {
             $token = QuickBooksToken::updateOrCreate(
                 ['user_id' => $userId],
@@ -113,8 +117,8 @@ class QuickBooksService
                     'realm_id' => $realmId,
                     'access_token' => $accessToken->getAccessToken(),
                     'refresh_token' => $accessToken->getRefreshToken(),
-                    'token_expires_at' => now()->addSeconds($accessExpiresIn),
-                    'refresh_token_expires_at' => now()->addSeconds($refreshExpiresIn),
+                    'token_expires_at' => $accessExpiresAt,
+                    'refresh_token_expires_at' => $refreshExpiresAt,
                     'selected_client_qbo_id' => null,
                     'selected_client_name' => null,
                     'selected_clients' => null,
@@ -178,18 +182,61 @@ class QuickBooksService
             $helper = $dataService->getOAuth2LoginHelper();
             $newToken = $helper->refreshToken();
 
-            $accessExpiresIn = (int) ($newToken->getAccessTokenExpiresAt() ?: 3600);
-            $refreshExpiresIn = (int) ($newToken->getRefreshTokenExpiresAt() ?: 8726400);
-
             $fresh->update([
                 'access_token' => $newToken->getAccessToken(),
                 'refresh_token' => $newToken->getRefreshToken(),
-                'token_expires_at' => now()->addSeconds($accessExpiresIn),
-                'refresh_token_expires_at' => now()->addSeconds($refreshExpiresIn),
+                'token_expires_at' => $this->resolveExpiry(
+                    fn () => $newToken->getAccessTokenExpiresAt(), 3600
+                ),
+                'refresh_token_expires_at' => $this->resolveExpiry(
+                    fn () => $newToken->getRefreshTokenExpiresAt(), 8726400
+                ),
             ]);
 
             return $fresh->fresh();
         });
+    }
+
+    /**
+     * Resolve a token expiry returned by the Intuit SDK.
+     *
+     * OAuth2AccessToken::getAccessTokenExpiresAt() does NOT return a number of
+     * seconds, despite the constructor docblock describing the underlying
+     * property that way. It returns a formatted date string, built by
+     * getDateFromSeconds() as date('Y/m/d H:i:s', ...).
+     *
+     * The previous code cast that string to int. PHP reads the leading digits,
+     * so "2026/09/12 19:16:17" became the integer 2026, and every token was
+     * stored with a ~34 minute lifetime instead of 1 hour for the access token
+     * and 101 days for the refresh token. Once the refresh token was considered
+     * expired the user had to reconnect QuickBooks entirely, and every
+     * scheduled sync failed with "refresh token has expired".
+     *
+     * @param  callable():string  $accessor  throws SdkException when unset
+     * @param  int  $fallbackSeconds  lifetime to assume if the SDK gives nothing usable
+     */
+    private function resolveExpiry(callable $accessor, int $fallbackSeconds): Carbon
+    {
+        try {
+            $value = $accessor();
+
+            if (! empty($value)) {
+                $parsed = Carbon::createFromFormat('Y/m/d H:i:s', (string) $value);
+
+                // A past date means the SDK handed back something unexpected;
+                // fall back rather than store an already-expired token.
+                if ($parsed && $parsed->isFuture()) {
+                    return $parsed;
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('QuickBooks: could not read token expiry from the SDK, using fallback.', [
+                'fallback_seconds' => $fallbackSeconds,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return now()->addSeconds($fallbackSeconds);
     }
 
     /**
@@ -236,6 +283,7 @@ class QuickBooksService
             QuickBooksCustomer::where('realm_id', $realmId)->delete();
             QuickBooksInvoice::where('realm_id', $realmId)->delete();
             QuickBooksTransaction::where('realm_id', $realmId)->delete();
+            QuickBooksSyncState::where('realm_id', $realmId)->delete();
 
             Log::info('QuickBooks: synced data purged after disconnect.', [
                 'user_id' => $userId,
@@ -447,19 +495,56 @@ class QuickBooksService
     }
 
     /**
-     * Run all three sync operations for a token and return a summary.
+     * Run every sync operation for a token, recording per-entity progress.
+     *
+     * A failing entity is recorded and skipped rather than aborting the run, so
+     * one bad entity cannot deny the user every other figure on the dashboard.
+     * If anything failed the method throws at the end, which lets the job's
+     * existing retry/backoff have another go; the sync methods are all
+     * updateOrCreate, so a repeat run is safe.
      *
      * @return array{company_info: int, accounts: int, customers: int, invoices: int, transactions: int}
+     *
+     * @throws RuntimeException if one or more entities failed
      */
     public function syncAll(QuickBooksToken $token): array
     {
-        return [
-            'company_info' => $this->syncCompanyInfo($token),
-            'accounts' => $this->syncAccounts($token),
-            'customers' => $this->syncCustomers($token),
-            'invoices' => $this->syncInvoices($token),
-            'transactions' => $this->syncTransactions($token),
+        $operations = [
+            'company_info' => fn () => $this->syncCompanyInfo($token),
+            'accounts' => fn () => $this->syncAccounts($token),
+            'customers' => fn () => $this->syncCustomers($token),
+            'invoices' => fn () => $this->syncInvoices($token),
+            'transactions' => fn () => $this->syncTransactions($token),
         ];
+
+        $counts = [];
+        $failures = [];
+
+        foreach ($operations as $entity => $operation) {
+            QuickBooksSyncState::markSyncing($token->realm_id, $entity);
+
+            try {
+                $count = $operation();
+                $counts[$entity] = $count;
+                QuickBooksSyncState::markComplete($token->realm_id, $entity, $count);
+            } catch (\Throwable $e) {
+                $counts[$entity] = 0;
+                $failures[$entity] = $e->getMessage();
+                QuickBooksSyncState::markFailed($token->realm_id, $entity, $e->getMessage());
+
+                Log::error("QuickBooks: {$entity} sync failed for realm {$token->realm_id}.", [
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        if ($failures !== []) {
+            throw new RuntimeException(
+                'QuickBooks sync completed with failures: '.json_encode($failures)
+            );
+        }
+
+        return $counts;
     }
 
     /**

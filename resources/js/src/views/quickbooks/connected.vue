@@ -20,8 +20,29 @@
                  a blank page while invoices/customers/transactions are fetched. -->
             <div v-if="syncing" class="mt-6 flex flex-col items-center gap-3">
                 <span class="animate-spin border-4 border-success border-l-transparent rounded-full w-9 h-9"></span>
+
+                <!-- Progress bar, driven by the per-entity sync state. Gives the
+                     user something that visibly moves instead of an open-ended
+                     spinner while the background sync runs. -->
+                <div class="w-full max-w-xs">
+                    <div class="h-2 w-full rounded-full bg-white-dark/20 overflow-hidden">
+                        <div
+                            class="h-full rounded-full bg-success transition-all duration-500 ease-out"
+                            :style="{ width: `${Math.max(syncPercent, 5)}%` }"
+                        ></div>
+                    </div>
+                    <p class="mt-2 text-white-dark/60 text-xs">
+                        {{ entitiesFinished }} of {{ entitiesTotal }} imported
+                    </p>
+                </div>
+
                 <p class="text-white-dark/60 text-sm">
-                    Syncing all your QuickBooks data… this can take a few moments.
+                    <template v-if="pendingLabels.length">
+                        Importing {{ pendingLabels.join(', ') }}…
+                    </template>
+                    <template v-else>
+                        Syncing all your QuickBooks data… this can take a few moments.
+                    </template>
                 </p>
             </div>
             <p v-else class="mt-6 text-white-dark/50 text-sm">
@@ -48,6 +69,10 @@ const { showToast } = useToast();
 const dashboardPath = authStore.isAdmin ? '/quickbooks/dashboard' : '/quickbooks/portal';
 
 const syncing = computed(() => qbStore.syncing);
+const syncPercent = computed(() => qbStore.syncPercent);
+const pendingLabels = computed(() => qbStore.syncPendingLabels);
+const entitiesTotal = computed(() => qbStore.syncProgress?.entities_total ?? 0);
+const entitiesFinished = computed(() => qbStore.syncProgress?.entities_finished ?? 0);
 
 onMounted(async () => {
     await qbStore.fetchStatus(true);
@@ -62,8 +87,18 @@ onMounted(async () => {
     // so the user gets a visible "syncing" state and a success confirmation.
     try {
         await qbStore.triggerSync();
-        await qbStore.fetchStatus(true);
-        showToast('QuickBooks connected — your data has been synced.', 'success');
+
+        // triggerSync resolves on a partial sync too (some entities failed but
+        // the run is over), so a clean resolve is not proof of success. Without
+        // this check the user gets a success toast over missing data.
+        if (qbStore.syncHadFailures || qbStore.error) {
+            showToast(
+                qbStore.error ?? 'Connected, but some data could not be imported. You can retry with Refresh.',
+                'warning',
+            );
+        } else {
+            showToast('QuickBooks connected, your data has been synced.', 'success');
+        }
     } catch {
         showToast(
             qbStore.error ?? 'Connected, but the data sync didn\'t finish. You can retry with Refresh.',

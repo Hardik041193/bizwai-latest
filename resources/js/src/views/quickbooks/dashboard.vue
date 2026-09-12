@@ -366,12 +366,19 @@ watch(activeTab, (tab) => {
 // ── Sync ──────────────────────────────────────────────────────────────────
 async function syncData() {
     try {
+        // Resolves when the sync has actually finished, not when it is queued,
+        // and refreshes the summary itself. The old fixed setTimeout was a
+        // guess at the duration and is no longer needed.
         await qbStore.triggerSync();
-        showToast('Sync started — data will refresh shortly.', 'success');
-        setTimeout(async () => {
-            await qbStore.fetchSummary();
-            await loadInvoices();
-        }, 1500);
+
+        // A clean resolve can still mean some entities failed.
+        if (qbStore.syncHadFailures || qbStore.error) {
+            showToast(qbStore.error ?? 'Sync finished, but some data could not be imported.', 'warning');
+        } else {
+            showToast('Sync complete, your data is up to date.', 'success');
+        }
+
+        await loadInvoices();
     } catch (_) {
         showToast(qbStore.error ?? 'Failed to trigger sync.', 'error');
     }

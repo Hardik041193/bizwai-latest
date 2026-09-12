@@ -6,6 +6,7 @@ use App\Jobs\SyncQuickBooksDataJob;
 use App\Models\QuickBooksAccount;
 use App\Models\QuickBooksCustomer;
 use App\Models\QuickBooksInvoice;
+use App\Models\QuickBooksSyncState;
 use App\Models\QuickBooksToken;
 use App\Models\QuickBooksTransaction;
 use App\Models\User;
@@ -269,9 +270,40 @@ class QuickBooksController extends Controller
             return response()->json(['message' => 'QuickBooks account is not connected.'], 422);
         }
 
+        // Seed the state rows here, in the request, not in the job. The job may
+        // not be picked up by a worker for a second or two, and in that gap the
+        // frontend's first progress poll would otherwise read the previous
+        // run's "complete" rows and clear its spinner on a sync that has not
+        // begun.
+        QuickBooksSyncState::markQueued($token->realm_id);
+
         dispatch(new SyncQuickBooksDataJob($token->id));
 
-        return response()->json(['message' => 'Sync has been queued successfully.']);
+        return response()->json([
+            'message' => 'Sync has been queued successfully.',
+            'progress' => QuickBooksSyncState::progressFor($token->realm_id),
+        ]);
+    }
+
+    /**
+     * Per-entity sync progress for the authenticated user's realm.
+     *
+     * Polled by the frontend while a sync runs. Cheap by design (one indexed
+     * read of at most one row per entity) because it is hit every couple of
+     * seconds during onboarding.
+     */
+    public function syncProgress(Request $request): JsonResponse
+    {
+        $token = $request->user()->quickBooksToken;
+
+        if (! $token) {
+            return response()->json(['message' => 'QuickBooks is not connected.'], 422);
+        }
+
+        return response()->json(array_merge(
+            ['realm_id' => $token->realm_id],
+            QuickBooksSyncState::progressFor($token->realm_id)
+        ));
     }
 
     /**

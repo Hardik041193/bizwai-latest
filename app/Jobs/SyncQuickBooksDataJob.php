@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\QuickBooksSyncState;
 use App\Models\QuickBooksToken;
 use App\Services\QuickBooksService;
 use Illuminate\Bus\Queueable;
@@ -30,8 +31,12 @@ class SyncQuickBooksDataJob implements ShouldQueue
 
     /**
      * Maximum seconds the job may run.
+     *
+     * Must stay below the queue connection's retry_after, otherwise the worker
+     * releases the job back for a second worker to pick up while the first is
+     * still running it, and the realm syncs twice concurrently.
      */
-    public int $timeout = 120;
+    public int $timeout = 600;
 
     public function __construct(private readonly int $tokenId)
     {
@@ -48,6 +53,12 @@ class SyncQuickBooksDataJob implements ShouldQueue
         }
 
         Log::info("QuickBooks sync started for realm {$token->realm_id} (user {$token->user_id}).");
+
+        // The controller seeds these rows before dispatching so the frontend's
+        // first poll sees work in progress, but a sync started from the console
+        // command or the scheduler has no such seed. Seeding again here is
+        // harmless (updateOrCreate) and keeps every entry point consistent.
+        QuickBooksSyncState::markQueued($token->realm_id);
 
         try {
             $counts = $service->syncAll($token);
@@ -71,5 +82,15 @@ class SyncQuickBooksDataJob implements ShouldQueue
         Log::error("SyncQuickBooksDataJob permanently failed for token #{$this->tokenId}.", [
             'error' => $exception->getMessage(),
         ]);
+
+        // Release the frontend. Entities left pending or syncing will never
+        // finish now that retries are exhausted, and without this the progress
+        // poller would spin forever on a sync that is already dead. Covers the
+        // cases syncAll's own handler cannot: timeout, OOM, worker restart.
+        $token = QuickBooksToken::find($this->tokenId);
+
+        if ($token) {
+            QuickBooksSyncState::failUnfinished($token->realm_id, $exception->getMessage());
+        }
     }
 }
