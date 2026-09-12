@@ -97,6 +97,14 @@ const routes: RouteRecordRaw[] = [
         name: 'chat',
         component: () => import(/* webpackChunkName: "apps-chat" */ '../views/apps/chat.vue'),
     },
+    // AI Financial Assistant — QuickBooks-aware chat (distinct path from the
+    // pre-existing template demo page above at /apps/chat).
+    {
+        path: '/ai-chat',
+        name: 'ai-chat',
+        component: () => import(/* webpackChunkName: "ai-chat" */ '../views/apps/ai-chat.vue'),
+        meta: { requiresAuth: true },
+    },
     {
         path: '/apps/mailbox',
         name: 'mailbox',

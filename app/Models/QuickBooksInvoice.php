@@ -13,6 +13,7 @@ class QuickBooksInvoice extends Model
         'qbo_id',
         'doc_number',
         'customer_name',
+        'customer_qbo_id',
         'customer_email',
         'txn_date',
         'due_date',
@@ -25,11 +26,11 @@ class QuickBooksInvoice extends Model
     ];
 
     protected $casts = [
-        'txn_date'     => 'date',
-        'due_date'     => 'date',
+        'txn_date' => 'date',
+        'due_date' => 'date',
         'total_amount' => 'decimal:2',
-        'balance'      => 'decimal:2',
-        'line_items'   => 'array',
-        'synced_at'    => 'datetime',
+        'balance' => 'decimal:2',
+        'line_items' => 'array',
+        'synced_at' => 'datetime',
     ];
 }
