@@ -135,16 +135,21 @@ bound to those update without extra wiring.
 
 ### Running the tests
 
-`tests/Feature/QuickBooksSync*Test.php` need PHPUnit, which cannot start on this
-machine: no PHP 8 build here has `dom`/`xml`/`xmlwriter`, and `phpunit.xml` now
-uses in-memory SQLite, which needs `pdo_sqlite`.
+No PHP 8 build on this machine has `dom`/`xml`/`xmlwriter` (PHPUnit refuses to
+start without them) or `pdo_sqlite` (which `phpunit.xml` now uses). Either
+install them:
 
     sudo apt install -y php8.3-xml php8.3-sqlite3
     php artisan test
 
-Until then the same cases can be executed against a MySQL test schema:
+or run the suite in a container that already has them, which needs nothing
+installed on the host:
 
-    php artisan tinker --execute="require 'scratchpad/cases.php';"   # DB_DATABASE=bizwai_test
+    docker run --rm -v "$PWD":/app -w /app --user "$(id -u):$(id -g)" \
+      php:8.3-cli php artisan test
+
+The `--user` flag matters: without it the container writes root-owned files
+into `storage/` and `bootstrap/cache`.
 
 ### Partial failure is not an exception
 
