@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\QuickBooksSyncState;
 use App\Models\QuickBooksToken;
+use App\Services\QuickBooksService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -15,8 +16,10 @@ use Illuminate\Support\Facades\Log;
 /**
  * Start a full sync of a QuickBooks realm.
  *
- * Makes no QuickBooks calls itself. It fans the sync out into a batch of
- * SyncQuickBooksEntityJob, one per step, each of which pages on its own. Every
+ * Makes no QuickBooks calls itself. It fans the sync out into a batch: a
+ * SyncQuickBooksEntityJob for each single step, then either one
+ * SyncQuickBooksChangesJob, when every data entity is inside the change data
+ * capture window, or a paged SyncQuickBooksEntityJob per data entity. Every
  * entry point (the Sync button, the OAuth callback, the scheduler) still
  * dispatches this job, so none of them needed to change.
  */
@@ -71,8 +74,23 @@ class SyncQuickBooksDataJob implements ShouldQueue
 
         $steps = array_map(
             fn (string $entity) => new SyncQuickBooksEntityJob($token->id, $entity),
-            QuickBooksSyncState::ENTITIES
+            array_values(array_diff(QuickBooksSyncState::ENTITIES, QuickBooksService::PAGED_ENTITIES))
         );
+
+        // Every data entity completed a run inside QuickBooks' change data
+        // capture window: one change request replaces a full paged query per
+        // entity, and also picks up deletions. Otherwise sync in full.
+        $since = QuickBooksSyncState::changesSince(
+            $realmId, QuickBooksService::PAGED_ENTITIES, QuickBooksService::CDC_MAX_AGE_DAYS
+        );
+
+        if ($since !== null) {
+            $steps[] = new SyncQuickBooksChangesJob($token->id, $since->toIso8601String());
+        } else {
+            foreach (QuickBooksService::PAGED_ENTITIES as $entity) {
+                $steps[] = new SyncQuickBooksEntityJob($token->id, $entity);
+            }
+        }
 
         Bus::batch($steps)
             ->name("quickbooks-sync:{$realmId}")

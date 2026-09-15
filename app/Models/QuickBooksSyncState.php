@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 class QuickBooksSyncState extends Model
 {
@@ -52,6 +53,7 @@ class QuickBooksSyncState extends Model
         'start_position',
         'started_at',
         'last_synced_at',
+        'changes_through',
         'error',
     ];
 
@@ -60,6 +62,7 @@ class QuickBooksSyncState extends Model
         'start_position' => 'integer',
         'started_at' => 'datetime',
         'last_synced_at' => 'datetime',
+        'changes_through' => 'datetime',
     ];
 
     public function label(): string
@@ -142,16 +145,24 @@ class QuickBooksSyncState extends Model
 
     public static function markComplete(string $realmId, string $entity, int $records): void
     {
-        self::updateOrCreate(
-            ['realm_id' => $realmId, 'entity' => $entity],
-            [
-                'status' => self::STATUS_COMPLETE,
-                'records_synced' => $records,
-                'last_synced_at' => now(),
-                'start_position' => null,
-                'error' => null,
-            ]
-        );
+        $row = self::firstOrNew(['realm_id' => $realmId, 'entity' => $entity]);
+
+        $row->fill([
+            'status' => self::STATUS_COMPLETE,
+            'records_synced' => $records,
+            'last_synced_at' => now(),
+            'start_position' => null,
+            'error' => null,
+        ]);
+
+        // Advance the change data capture watermark to when this run started,
+        // not when it finished: anything changed in QuickBooks while the run was
+        // fetching is then picked up next time instead of falling in the gap.
+        if ($row->started_at !== null) {
+            $row->changes_through = $row->started_at;
+        }
+
+        $row->save();
     }
 
     public static function markFailed(string $realmId, string $entity, string $error): void
@@ -184,6 +195,33 @@ class QuickBooksSyncState extends Model
     // ──────────────────────────────────────────────────────────────────────
     // Progress reporting
     // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * Where to ask QuickBooks for changes from, or null when a full sync is needed.
+     *
+     * Change data capture can only be used when every one of the given entities
+     * has completed a run, and the oldest of those runs is inside QuickBooks'
+     * lookback window. Using the oldest watermark means no entity can miss a
+     * change; the rest just re-read a little, which is harmless because every
+     * write is an upsert.
+     *
+     * @param  array<int, string>  $entities
+     */
+    public static function changesSince(string $realmId, array $entities, int $maxAgeDays): ?Carbon
+    {
+        $watermarks = self::where('realm_id', $realmId)
+            ->whereIn('entity', $entities)
+            ->pluck('changes_through', 'entity')
+            ->filter();
+
+        if ($watermarks->count() < count($entities)) {
+            return null;
+        }
+
+        $oldest = $watermarks->min();
+
+        return $oldest->greaterThan(now()->subDays($maxAgeDays)) ? $oldest : null;
+    }
 
     /**
      * Whether a sync for this realm is genuinely still running.

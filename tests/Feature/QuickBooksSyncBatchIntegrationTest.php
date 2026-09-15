@@ -9,6 +9,7 @@ use App\Models\QuickBooksInvoice;
 use App\Models\QuickBooksSyncState as State;
 use App\Models\QuickBooksToken;
 use App\Models\User;
+use App\Services\QuickBooksService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
@@ -54,10 +55,18 @@ class QuickBooksSyncBatchIntegrationTest extends TestCase
      *
      * @param  array<string, int>  $totals  entity => record count
      * @param  array<string, int>  $statuses  entity => HTTP status to fail with
+     * @param  array<string, array<int, array>>  $changes  entity name => objects a CDC request returns
      */
-    private function fakeQuickBooks(array $totals, array $statuses = []): void
+    private function fakeQuickBooks(array $totals, array $statuses = [], array $changes = []): void
     {
-        Http::fake(function (Request $request) use ($totals, $statuses) {
+        Http::fake(function (Request $request) use ($totals, $statuses, $changes) {
+            if (str_contains($request->url(), '/cdc')) {
+                return Http::response(['CDCResponse' => [['QueryResponse' => array_map(
+                    fn (string $name) => [$name => $changes[$name] ?? []],
+                    ['Account', 'Customer', 'Invoice', 'Purchase']
+                )]]]);
+            }
+
             $query = urldecode($request->url());
 
             preg_match('/FROM (\w+)/', $query, $e);
@@ -157,5 +166,67 @@ class QuickBooksSyncBatchIntegrationTest extends TestCase
         $this->assertSame(1, DB::table('failed_jobs')->count());
         Http::assertSentCount(1);
         $this->assertSame(0, DB::table('jobs')->count());
+    }
+
+    /**
+     * Every data entity last completed a run $daysAgo days ago.
+     */
+    private function syncedDaysAgo(int $daysAgo): void
+    {
+        foreach (QuickBooksService::PAGED_ENTITIES as $entity) {
+            State::markSyncing($this->realm, $entity);
+            State::markComplete($this->realm, $entity, 1);
+        }
+
+        State::where('realm_id', $this->realm)->update(['changes_through' => now()->subDays($daysAgo)]);
+    }
+
+    public function test_a_realm_inside_the_window_syncs_through_changes_on_a_live_batch(): void
+    {
+        $this->fakeQuickBooks(['CompanyInfo' => 1], [], ['Account' => [['Id' => '1', 'Name' => 'Changed', 'Active' => true]]]);
+        $token = $this->token();
+        $this->syncedDaysAgo(2);
+
+        dispatch(new SyncQuickBooksDataJob($token->id));
+        $this->work();
+
+        $batch = DB::table('job_batches')->sole();
+
+        // company_info + client_matching + one changes job, no paged queries.
+        $this->assertSame(3, (int) $batch->total_jobs);
+        $this->assertNotNull($batch->finished_at);
+        $this->assertSame(0, (int) $batch->failed_jobs);
+
+        // Company info and one change request: two calls for the whole realm.
+        Http::assertSentCount(2);
+
+        $this->assertSame('complete', State::progressFor($this->realm)['status']);
+        $this->assertSame('Changed', QuickBooksAccount::where('realm_id', $this->realm)->where('qbo_id', '1')->value('name'));
+    }
+
+    public function test_a_truncated_change_set_adds_a_full_sync_to_the_live_batch(): void
+    {
+        $this->fakeQuickBooks(
+            ['CompanyInfo' => 1, 'Account' => 5],
+            [],
+            ['Account' => array_map(fn (int $i) => ['Id' => (string) $i, 'Name' => "Account {$i}"], range(1, 1000))]
+        );
+        $token = $this->token();
+        $this->syncedDaysAgo(2);
+
+        dispatch(new SyncQuickBooksDataJob($token->id));
+        $this->work();
+
+        $batch = DB::table('job_batches')->sole();
+
+        // 3 as above, plus the full sync added to the same batch: accounts 5@2
+        // (3 pages) and one page each for customers, invoices and purchases.
+        $this->assertSame(9, (int) $batch->total_jobs);
+        $this->assertNotNull($batch->finished_at);
+        $this->assertSame(0, (int) $batch->pending_jobs);
+
+        // The full sync's 5 accounts, not the 1000 from the truncated change set.
+        $this->assertSame(5, QuickBooksAccount::where('realm_id', $this->realm)->count());
+        $this->assertSame('complete', State::progressFor($this->realm)['status']);
     }
 }

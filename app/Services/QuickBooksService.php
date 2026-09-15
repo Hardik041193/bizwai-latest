@@ -32,6 +32,21 @@ class QuickBooksService
     public const PAGED_ENTITIES = ['accounts', 'customers', 'invoices', 'transactions'];
 
     /**
+     * QuickBooks' change data capture looks back at most 30 days. One day short
+     * of that leaves margin for clock skew and a run that starts late.
+     */
+    public const CDC_MAX_AGE_DAYS = 29;
+
+    /**
+     * QuickBooks returns at most 1000 objects from one change data capture
+     * request, so a response that reaches it may have been cut short.
+     */
+    private const CDC_MAX_OBJECTS = 1000;
+
+    private const REJECTED_CONNECTION_MESSAGE =
+        'QuickBooks API error (401): the connection was rejected. The user must reconnect their account.';
+
+    /**
      * Build a DataService instance for authorization URL generation only
      * (no realm_id needed at this stage).
      */
@@ -463,6 +478,63 @@ class QuickBooksService
     }
 
     /**
+     * Apply everything that changed in QuickBooks since $since, in one request.
+     *
+     * One change data capture call covers every paged entity, where a full sync
+     * needs at least one paged query per entity, and unlike a query it also
+     * reports deletions. A response that reaches the object cap may be missing
+     * changes, so nothing is written in that case and `truncated` tells the
+     * caller to run a full sync instead.
+     *
+     * @return array{truncated: bool, counts: array<string, array{updated: int, deleted: int}>}
+     */
+    public function syncChanges(QuickBooksToken $token, Carbon $since): array
+    {
+        $keys = [];
+        foreach (self::PAGED_ENTITIES as $entity) {
+            $keys[$entity] = $this->pagedEntity($entity)['key'];
+        }
+
+        $changes = $this->fetchChanges($token, array_values($keys), $since);
+        $total = array_sum(array_map('count', $changes));
+
+        if ($total >= self::CDC_MAX_OBJECTS) {
+            Log::warning('QuickBooks: change set reached the CDC object cap, a full sync is needed.', [
+                'realm_id' => $token->realm_id,
+                'objects' => $total,
+                'since' => $since->toIso8601String(),
+            ]);
+
+            return ['truncated' => true, 'counts' => []];
+        }
+
+        $counts = [];
+
+        foreach ($keys as $entity => $key) {
+            $definition = $this->pagedEntity($entity);
+
+            [$deleted, $active] = collect($changes[$key])
+                ->partition(fn (\stdClass $row) => ($row->status ?? null) === 'Deleted');
+
+            $updated = $definition['persist']($token, $active->values()->all());
+
+            // A deleted object carries only its Id and MetaData.
+            $deletedIds = $deleted->pluck('Id')->filter()->map(fn ($id) => (string) $id)->values()->all();
+
+            if ($deletedIds !== []) {
+                $model = $definition['model'];
+                $model::where('realm_id', $token->realm_id)->whereIn('qbo_id', $deletedIds)->delete();
+            }
+
+            $counts[$entity] = ['updated' => $updated, 'deleted' => count($deletedIds)];
+        }
+
+        Log::info("QuickBooks: applied changes since {$since->toIso8601String()} for realm {$token->realm_id}.", $counts);
+
+        return ['truncated' => false, 'counts' => $counts];
+    }
+
+    /**
      * Sync every page of a paged entity within this process.
      *
      * Queued syncs page through SyncQuickBooksEntityJob instead, one job per
@@ -483,23 +555,26 @@ class QuickBooksService
     /**
      * How a paged entity is queried and stored.
      *
-     * @return array{key: string, query: \Closure(QuickBooksToken): string, persist: \Closure(QuickBooksToken, array): int}
+     * @return array{key: string, model: class-string<\Illuminate\Database\Eloquent\Model>, query: \Closure(QuickBooksToken): string, persist: \Closure(QuickBooksToken, array): int}
      */
     private function pagedEntity(string $entity): array
     {
         return match ($entity) {
             'accounts' => [
                 'key' => 'Account',
+                'model' => QuickBooksAccount::class,
                 'query' => fn (QuickBooksToken $token) => 'SELECT * FROM Account',
                 'persist' => fn (QuickBooksToken $token, array $rows) => $this->persistAccounts($token, $rows),
             ],
             'customers' => [
                 'key' => 'Customer',
+                'model' => QuickBooksCustomer::class,
                 'query' => fn (QuickBooksToken $token) => 'SELECT * FROM Customer',
                 'persist' => fn (QuickBooksToken $token, array $rows) => $this->persistCustomers($token, $rows),
             ],
             'invoices' => [
                 'key' => 'Invoice',
+                'model' => QuickBooksInvoice::class,
                 'query' => fn (QuickBooksToken $token) => $this->entityQuery(
                     'Invoice', QuickBooksInvoice::where('realm_id', $token->realm_id)->exists()
                 ),
@@ -507,6 +582,7 @@ class QuickBooksService
             ],
             'transactions' => [
                 'key' => 'Purchase',
+                'model' => QuickBooksTransaction::class,
                 'query' => fn (QuickBooksToken $token) => $this->entityQuery(
                     'Purchase', QuickBooksTransaction::where('realm_id', $token->realm_id)->exists()
                 ),
@@ -963,22 +1039,16 @@ class QuickBooksService
         // outlast the one-hour access token.
         $token = $this->refreshTokenIfNeeded($token);
 
-        $baseUrl = config('quickbooks.base_url') === 'Production'
-            ? 'https://quickbooks.api.intuit.com'
-            : 'https://sandbox-quickbooks.api.intuit.com';
-
         // GET with URL-encoded query param — avoids POST body parsing issues.
         $response = Http::withToken($token->access_token)
             ->accept('application/json')
-            ->get("{$baseUrl}/v3/company/{$token->realm_id}/query", [
+            ->get("{$this->apiBaseUrl()}/v3/company/{$token->realm_id}/query", [
                 'query' => "{$query} STARTPOSITION {$startPosition} MAXRESULTS {$pageSize}",
                 'minorversion' => '65',
             ]);
 
         if ($response->status() === 401) {
-            throw new QuickBooksReauthorizationRequired(
-                'QuickBooks API error (401): the connection was rejected. The user must reconnect their account.'
-            );
+            throw new QuickBooksReauthorizationRequired(self::REJECTED_CONNECTION_MESSAGE);
         }
 
         if ($response->failed()) {
@@ -988,6 +1058,81 @@ class QuickBooksService
         }
 
         return (array) ($response->object()->QueryResponse->{$entityKey} ?? []);
+    }
+
+    /**
+     * Fetch everything that changed since $since for the given entities.
+     *
+     * @param  array<int, string>  $keys  QuickBooks entity names, e.g. Account, Invoice
+     * @return array<string, array<\stdClass>>  changed objects keyed by entity name
+     *
+     * @throws QuickBooksReauthorizationRequired when the connection is rejected
+     * @throws RuntimeException on any other HTTP or API error
+     */
+    private function fetchChanges(QuickBooksToken $token, array $keys, Carbon $since): array
+    {
+        $token = $this->refreshTokenIfNeeded($token);
+
+        $response = Http::withToken($token->access_token)
+            ->accept('application/json')
+            ->get("{$this->apiBaseUrl()}/v3/company/{$token->realm_id}/cdc", [
+                'entities' => implode(',', $keys),
+                // With an explicit offset. The SDK sends none, which leaves the
+                // time zone for QuickBooks to assume.
+                'changedSince' => $since->copy()->utc()->format('Y-m-d\TH:i:sP'),
+                'minorversion' => '65',
+            ]);
+
+        if ($response->status() === 401) {
+            throw new QuickBooksReauthorizationRequired(self::REJECTED_CONNECTION_MESSAGE);
+        }
+
+        if ($response->failed()) {
+            throw new RuntimeException(
+                "QuickBooks API error ({$response->status()}): ".$response->body()
+            );
+        }
+
+        return $this->parseChanges((array) $response->json(), $keys);
+    }
+
+    /**
+     * Collect changed objects from a change data capture response, per entity.
+     *
+     * The SDK's XML parser shows one CDCResponse holding a QueryResponse per
+     * requested entity. How that maps to JSON (a list or an object at each
+     * level) is not independently confirmed, so both are accepted rather than
+     * guessing and silently finding no changes.
+     *
+     * @param  array<string, mixed>  $body
+     * @param  array<int, string>  $keys
+     * @return array<string, array<\stdClass>>
+     */
+    private function parseChanges(array $body, array $keys): array
+    {
+        $asList = fn ($value) => is_array($value) && ! array_is_list($value) ? [$value] : (array) $value;
+
+        $changes = array_fill_keys($keys, []);
+
+        foreach ($asList($body['CDCResponse'] ?? []) as $cdcResponse) {
+            foreach ($asList($cdcResponse['QueryResponse'] ?? []) as $queryResponse) {
+                foreach ($keys as $key) {
+                    foreach ($asList($queryResponse[$key] ?? []) as $object) {
+                        // Objects as the persist methods expect them.
+                        $changes[$key][] = json_decode(json_encode($object));
+                    }
+                }
+            }
+        }
+
+        return $changes;
+    }
+
+    private function apiBaseUrl(): string
+    {
+        return config('quickbooks.base_url') === 'Production'
+            ? 'https://quickbooks.api.intuit.com'
+            : 'https://sandbox-quickbooks.api.intuit.com';
     }
 
     /**
