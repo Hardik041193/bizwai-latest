@@ -61,9 +61,12 @@ class QuickBooksSyncStateTest extends TestCase
         $progress = State::progressFor($this->realm);
 
         $this->assertSame('syncing', $progress['status']);
-        $this->assertSame(33, $progress['progress']); // 2 of 6
+        $this->assertSame((int) round(2 / count(State::ENTITIES) * 100), $progress['progress']);
         $this->assertSame(2, $progress['entities_finished']);
-        $this->assertSame(['client_matching', 'customers', 'invoices', 'transactions'], $progress['pending_entities']);
+        $this->assertSame(
+            array_values(array_diff(State::ENTITIES, ['company_info', 'accounts'])),
+            $progress['pending_entities']
+        );
     }
 
     public function test_a_clean_run_reports_complete(): void

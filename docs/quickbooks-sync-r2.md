@@ -75,8 +75,8 @@ what changed, through its change data capture (CDC) endpoint:
 GET /v3/company/{realm}/cdc?entities=Account,Customer,Invoice,Purchase&changedSince=2026-09-13T08:00:00+00:00
 ```
 
-One request covers all four entities, where a full sync needs at least one paged
-query each, and unlike a query it also reports deletions. A daily sync of a
+One request covers all four entities (eight since R3, see
+`quickbooks-sync-r3.md`), where a full sync needs at least one paged query each, and unlike a query it also reports deletions. A daily sync of a
 realm that is up to date now costs about two calls: company info and one change
 request.
 

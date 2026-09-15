@@ -176,7 +176,10 @@ class QuickBooksChangesSyncTest extends TestCase
 
         $since = State::changesSince($this->realm, QuickBooksService::PAGED_ENTITIES, 29);
 
-        $this->assertSame(now()->subDays(4)->toDateTimeString(), $since?->toDateTimeString());
+        $this->assertSame(
+            now()->subDays(count(QuickBooksService::PAGED_ENTITIES))->toDateTimeString(),
+            $since?->toDateTimeString()
+        );
     }
 
     public function test_changes_since_is_null_when_an_entity_has_never_completed(): void

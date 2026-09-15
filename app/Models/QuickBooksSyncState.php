@@ -22,7 +22,8 @@ class QuickBooksSyncState extends Model
      *
      * Ordering matters for the progress UI: company_info resolves first so the
      * company name appears immediately, then the entities the dashboard needs.
-     * R3 appends bills, payments, sales_receipts and the rest here.
+     * Single steps come first, then the data entities in the same order as
+     * QuickBooksService::PAGED_ENTITIES.
      */
     public const ENTITIES = [
         'company_info',
@@ -31,6 +32,10 @@ class QuickBooksSyncState extends Model
         'customers',
         'invoices',
         'transactions',
+        'bills',
+        'payments',
+        'sales_receipts',
+        'credit_memos',
     ];
 
     /**
@@ -43,6 +48,10 @@ class QuickBooksSyncState extends Model
         'customers' => 'Customers',
         'invoices' => 'Invoices',
         'transactions' => 'Expenses',
+        'bills' => 'Bills',
+        'payments' => 'Payments received',
+        'sales_receipts' => 'Sales receipts',
+        'credit_memos' => 'Credit memos',
     ];
 
     protected $fillable = [

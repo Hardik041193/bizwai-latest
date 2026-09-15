@@ -123,7 +123,10 @@ class QuickBooksSyncRunTest extends TestCase
         $counts = app(QuickBooksService::class)->syncAll($token);
 
         $this->assertSame(
-            ['company_info' => 1, 'client_matching' => 0, 'accounts' => 2, 'customers' => 1, 'invoices' => 2, 'transactions' => 1],
+            [
+                'company_info' => 1, 'client_matching' => 0, 'accounts' => 2, 'customers' => 1, 'invoices' => 2,
+                'transactions' => 1, 'bills' => 0, 'payments' => 0, 'sales_receipts' => 0, 'credit_memos' => 0,
+            ],
             $counts
         );
 
