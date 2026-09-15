@@ -2,12 +2,17 @@
 
 namespace App\Services\Ai\Tools;
 
+use App\Models\QuickBooksToken;
 use App\Services\Ai\DateRangeResolver;
 use App\Services\Ai\QuickBooksAiContext;
+use App\Services\Ai\Tools\Concerns\UsesQuickBooksReports;
 use App\Services\Ai\Tools\Contracts\AiTool;
+use App\Services\QuickBooksReports;
 
 class CompareFinancialPeriods implements AiTool
 {
+    use UsesQuickBooksReports;
+
     private const PERIOD_ENUM = ['today', 'yesterday', 'this_week', 'last_week', 'this_month', 'last_month', 'this_quarter', 'last_quarter', 'this_year', 'last_year', 'ytd', 'mtd', 'custom'];
 
     public function name(): string
@@ -17,7 +22,7 @@ class CompareFinancialPeriods implements AiTool
 
     public function description(): string
     {
-        return 'Compare revenue, expenses, and profit between two periods and return the percentage change.';
+        return "Compare revenue, expenses and profit between two periods, from QuickBooks' own Profit and Loss report on the company's accounting basis, and return the percentage change.";
     }
 
     public function parameters(): array
@@ -53,27 +58,37 @@ class CompareFinancialPeriods implements AiTool
             $arguments['previous_end_date'] ?? null
         );
 
-        $current = GetProfitAndLoss::compute($currentRange, $context);
-        $previous = GetProfitAndLoss::compute($previousRange, $context);
+        return $this->withReports($context, function (QuickBooksReports $reports, QuickBooksToken $token, array $customers) use ($currentRange, $previousRange) {
+            $current = GetProfitAndLoss::figures($reports, $token, $currentRange, $customers);
+            $previous = GetProfitAndLoss::figures($reports, $token, $previousRange, $customers);
 
+            return [
+                'accounting_basis' => $current['accounting_basis'],
+                'limited_to_your_clients' => $customers !== [],
+                'current' => $this->period($currentRange, $current),
+                'previous' => $this->period($previousRange, $previous),
+                'change' => [
+                    'revenue_pct' => $this->percentChange($previous['revenue'], $current['revenue']),
+                    'expenses_pct' => $this->percentChange($previous['expenses'], $current['expenses']),
+                    'profit_pct' => $this->percentChange($previous['profit'], $current['profit']),
+                ],
+            ];
+        });
+    }
+
+    /**
+     * @param  array{start: \Carbon\Carbon, end: \Carbon\Carbon, label: string}  $range
+     * @param  array{revenue: float, expenses: float, profit: float}  $figures
+     */
+    private function period(array $range, array $figures): array
+    {
         return [
-            'current' => [
-                'period_label' => $currentRange['label'],
-                'start_date' => $currentRange['start']->toDateString(),
-                'end_date' => $currentRange['end']->toDateString(),
-                ...$current,
-            ],
-            'previous' => [
-                'period_label' => $previousRange['label'],
-                'start_date' => $previousRange['start']->toDateString(),
-                'end_date' => $previousRange['end']->toDateString(),
-                ...$previous,
-            ],
-            'change' => [
-                'revenue_pct' => $this->percentChange($previous['revenue'], $current['revenue']),
-                'expenses_pct' => $this->percentChange($previous['expenses'], $current['expenses']),
-                'profit_pct' => $this->percentChange($previous['profit'], $current['profit']),
-            ],
+            'period_label' => $range['label'],
+            'start_date' => $range['start']->toDateString(),
+            'end_date' => $range['end']->toDateString(),
+            'revenue' => $figures['revenue'],
+            'expenses' => $figures['expenses'],
+            'profit' => $figures['profit'],
         ];
     }
 

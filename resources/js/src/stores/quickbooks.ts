@@ -58,9 +58,15 @@ export interface QBSyncProgress {
 }
 
 export interface QBSummary {
-    total_revenue: number;
+    /** From QuickBooks' Profit and Loss report; null when it could not be loaded. */
+    total_revenue: number | null;
     outstanding_balance: number;
-    total_expenses: number;
+    total_expenses: number | null;
+    net_income?: number | null;
+    /** The company's QuickBooks report basis the figures are on, e.g. "Accrual". */
+    accounting_basis?: string | null;
+    /** Why total_revenue and total_expenses are null, when they are. */
+    figures_error?: 'client_access_pending' | 'quickbooks_reconnect_required' | 'quickbooks_report_unavailable' | null;
     overdue_invoices: number;
     total_invoices: number;
     total_customers: number;

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\QuickBooksReauthorizationRequired;
 use App\Jobs\SyncQuickBooksDataJob;
 use App\Models\QuickBooksAccount;
 use App\Models\QuickBooksCustomer;
@@ -9,11 +10,13 @@ use App\Models\QuickBooksInvoice;
 use App\Models\QuickBooksSyncState;
 use App\Models\QuickBooksToken;
 use App\Models\QuickBooksTransaction;
+use App\Services\QuickBooksReports;
 use App\Services\QuickBooksService;
 use App\Support\QuickBooksClientScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -319,6 +322,38 @@ class QuickBooksController extends Controller
     // ──────────────────────────────────────────────────────────────────────
 
     /**
+     * Profit and loss to date for the token's scope, or why it is missing.
+     *
+     * A failed report must not take the dashboard down: the caller still returns
+     * the rest of the summary, and the reason says why these figures are absent.
+     *
+     * @return array{0: array<string, mixed>|null, 1: string|null}
+     */
+    private function profitAndLossToDate(QuickBooksToken $token): array
+    {
+        $customers = QuickBooksClientScope::reportCustomersForToken($token);
+
+        if ($customers === null) {
+            return [null, 'client_access_pending'];
+        }
+
+        try {
+            return [app(QuickBooksReports::class)->profitAndLoss(
+                $token, Carbon::parse(QuickBooksReports::ALL_TIME_START), Carbon::now(), $customers
+            ), null];
+        } catch (QuickBooksReauthorizationRequired $e) {
+            return [null, 'quickbooks_reconnect_required'];
+        } catch (RuntimeException $e) {
+            Log::warning('QuickBooks report unavailable for the dashboard summary.', [
+                'realm_id' => $token->realm_id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [null, 'quickbooks_report_unavailable'];
+        }
+    }
+
+    /**
      * Resolve the QuickBooks realm token relevant to the current user.
      *
      * Every role resolves to its own connected QuickBooks token.
@@ -496,22 +531,26 @@ class QuickBooksController extends Controller
         $invoiceQuery = QuickBooksInvoice::where('realm_id', $realmId);
         $this->applySelectedClientToInvoices($invoiceQuery, $token);
 
-        $txnQuery = QuickBooksTransaction::where('realm_id', $realmId);
-        $this->applySelectedClientToTransactions($txnQuery, $token);
-
         $customerCountQuery = QuickBooksCustomer::where('realm_id', $realmId);
         $this->applySelectedClientToCustomers($customerCountQuery, $token);
 
-        $totalRevenue = (clone $invoiceQuery)->where('status', 'Paid')->sum('total_amount');
         $outstandingBalance = (clone $invoiceQuery)->whereIn('status', ['Open', 'Overdue'])->sum('balance');
-        $totalExpenses = (clone $txnQuery)->sum('amount');
         $overdueCount = (clone $invoiceQuery)->where('status', 'Overdue')->count();
         $invoiceTotal = (clone $invoiceQuery)->sum('total_amount');
 
+        // Revenue and expenses come from QuickBooks' own Profit and Loss report
+        // on the company's accounting basis. They used to be paid invoices and
+        // cash purchases, which on the sandbox realm put revenue at under half
+        // of what QuickBooks reports.
+        [$figures, $figuresError] = $this->profitAndLossToDate($token);
+
         return response()->json([
-            'total_revenue' => (float) $totalRevenue,
+            'total_revenue' => $figures['revenue'] ?? null,
             'outstanding_balance' => (float) $outstandingBalance,
-            'total_expenses' => (float) $totalExpenses,
+            'total_expenses' => $figures['total_expenses'] ?? null,
+            'net_income' => $figures['net_income'] ?? null,
+            'accounting_basis' => $figures['basis'] ?? null,
+            'figures_error' => $figuresError,
             'overdue_invoices' => $overdueCount,
             'total_invoices' => (clone $invoiceQuery)->count(),
             'total_customers' => (clone $customerCountQuery)->count(),

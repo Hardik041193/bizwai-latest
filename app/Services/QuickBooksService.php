@@ -56,7 +56,7 @@ class QuickBooksService
      */
     private const CDC_MAX_OBJECTS = 1000;
 
-    private const REJECTED_CONNECTION_MESSAGE =
+    public const REJECTED_CONNECTION_MESSAGE =
         'QuickBooks API error (401): the connection was rejected. The user must reconnect their account.';
 
     /**
@@ -1355,7 +1355,7 @@ class QuickBooksService
         return $changes;
     }
 
-    private function apiBaseUrl(): string
+    public function apiBaseUrl(): string
     {
         return config('quickbooks.base_url') === 'Production'
             ? 'https://quickbooks.api.intuit.com'

@@ -6,9 +6,12 @@ complete data. It ships in steps:
 | Step | Status |
 |---|---|
 | 1. Sync bills, payments, sales receipts and credit memos | Done |
-| 2. Revenue, expenses and profit from the complete data, with client scoping | Not started |
-| 3. QuickBooks' own reports, cached, for profit and loss questions | Not started |
-| 4. The AI chat qualifies answers while data is still importing | Not started |
+| 2. Revenue, expenses and profit from QuickBooks' own Profit and Loss report, cached, with client scoping | Done |
+| 3. The AI chat qualifies answers while data is still importing | Not started |
+
+The original plan had separate steps for computing figures from the complete
+data and for QuickBooks' reports. They merged: the evidence in step 2 showed the
+figures should come from the report itself, not from summing documents.
 
 ## Step 1: four more entities
 
@@ -100,3 +103,158 @@ list.
     invoices do, would have dropped most bill detail.
   - Bill status derivation on real data: 10 paid, 5 overdue, every bill with its
     vendor id.
+
+## Step 2: figures from QuickBooks' own Profit and Loss report
+
+### Why not sum the synced documents
+
+All dates, sandbox realm:
+
+| | Revenue | Expenses |
+|---|---|---|
+| The portal before this step (paid invoices, cash purchases) | 4,282.62 | 3,424.17 |
+| QuickBooks Profit and Loss, accrual basis | 10,201.77 | 8,558.31 |
+| QuickBooks Profit and Loss, cash basis | 5,080.27 | 6,984.39 |
+| Best estimate from all eight synced entities (accrual) | 10,816.47 | 9,566.34 |
+
+Expenses include cost of goods sold and other expenses. The portal showed under
+half of QuickBooks' accrual revenue. Even with every entity synced, summing
+documents came out 6% high on revenue and 12% high on expenses, because
+QuickBooks books each line to an account (tax, cost of goods, asset purchases,
+other expenses) that document totals cannot see. Only the report is exact.
+
+### Decisions
+
+Both were put to the product owner with the figures above:
+
+- **Basis: each company's own QuickBooks setting.** Implemented by sending no
+  `accounting_method`, so QuickBooks applies the company preference. On the
+  sandbox, `Preferences.ReportPrefs.ReportBasis` is `Accrual`, and a report
+  requested without a method came back on an accrual basis. The basis used is
+  returned with every figure.
+- **Source: QuickBooks' Profit and Loss report, cached.**
+
+### How it works
+
+`App\Services\QuickBooksReports`:
+
+- `profitAndLoss()` returns every section total plus three figures that always
+  satisfy revenue - total expenses = net income: `revenue` (income plus other
+  income), `total_expenses` (cost of goods sold, expenses and other expenses)
+  and `net_income`, and the top-level expense accounts. Parent accounts arrive
+  as nested sections with their own total and are kept as one line.
+- `incomeByCustomer()` reads the same report summarised by customer, so a
+  breakdown agrees with the headline. Columns are keyed by customer id; the
+  label, `not_specified` and `total` columns are skipped.
+- **Caching.** A report is cached under its realm, dates and client filter, plus
+  the realm's latest completed sync step, so a sync that lands data invalidates
+  it. A failed request is never cached, and nothing is kept longer than 6 hours.
+  Live: 1,631 ms for a report, 12 ms for the same report again.
+
+**Client scoping.** Reports can be filtered by customer id only. The filter
+comes from the same scoping code as the synced-data queries
+(`QuickBooksClientScope::reportCustomersFor*`):
+
+- A non-admin whose client match has not resolved gets no figures and no
+  QuickBooks request is made.
+- A specific selection becomes a comma list of customer ids. Confirmed live:
+  customers 1 and 2 together returned 890.00, their 630.00 and 260.00 combined.
+- A selection with no ids to filter by is denied rather than widened.
+
+**AI tools.** `get_profit_and_loss`, `compare_financial_periods`, `get_revenue`,
+`get_expenses` and `get_company_summary` now take their figures from the
+report. A report failure becomes an error the assistant can explain:
+`client_access_pending`, `quickbooks_reconnect_required` or
+`quickbooks_report_unavailable`. The system prompt asks the assistant to state
+the basis. The revenue breakdown no longer includes customer ids.
+
+**Dashboard summary.** `GET /api/quickbooks/summary` takes `total_revenue` and
+`total_expenses` from the report and adds `net_income`, `accounting_basis` and
+`figures_error`. A failed report no longer fails the endpoint: the rest of the
+summary is returned and the two figures are null. The admin dashboard shows
+"Unavailable" with the reason instead of $0.00, which would have been a
+confident wrong figure, and notes the basis when the figures loaded.
+
+### What users will see change
+
+- **Admin dashboard revenue and expenses** move to QuickBooks' figures. On the
+  sandbox, all-time revenue goes from 4,282.62 to 10,201.77 and expenses from
+  3,424.17 to 8,558.31.
+- **Client portal cards are unchanged.** Open balance and total invoiced still
+  come from invoices.
+- **AI answers** about revenue, expenses and profit now match QuickBooks and say
+  which basis they are on. A client-scoped user's figures cover only their
+  clients: live, Amy's Bird Sanctuary saw revenue of 630.00 and only her own
+  name in the customer breakdown.
+
+### API usage
+
+Each distinct report (period and client filter) costs one metered read until
+the company's next sync or 6 hours. The dashboard summary asks for a report
+running to today, so it costs at most one call per user per day, plus one after
+each sync. Repeat questions in the chat reuse the cache.
+
+### Also fixed in this step
+
+**The AI tools failed open for users whose client match had not resolved**
+(commit `e51ff44`). Scoping lived in two copies marked "do not let the two
+drift". The controller's copy failed closed, the AI tools' copy did not, so
+such a user could read the whole company through the chat. Confirmed with a
+failing test before the fix. There is now one implementation, used by both.
+
+### Deploying
+
+No migrations and no queue restart: reports run inside web and chat requests,
+not queued jobs. A web server that keeps code in memory (for example Octane, or
+opcache without timestamp validation) needs reloading.
+
+### Known limitations
+
+- **Figures can lag QuickBooks.** A cached report is reused until the next sync
+  or for 6 hours, so an edit made directly in QuickBooks can take that long to
+  show.
+- **The per-customer breakdown is income only.** QuickBooks does not attribute
+  other income to customers, so the breakdown can sum to less than revenue.
+- **A client-scoped user's expenses** are only those QuickBooks associates with
+  their customers.
+- **The dashboard change is type-checked and builds but has not been viewed in a
+  browser.** It needs an admin login.
+- **Chat lists do not cover the new entities yet.** `get_invoices`,
+  `get_customers` and `get_transactions` still read synced tables; no tool lists
+  bills, payments, sales receipts or credit memos.
+
+### Verified
+
+- **113 tests pass** (429 assertions), including `QuickBooksReportsTest` for
+  parsing, filtering and caching, and `QuickBooksAiReportToolsTest` for the tools
+  and the summary endpoint. Report fixtures follow live report structure,
+  including the `account`, `not_specified` and `total` column keys.
+- **Mutation checks.** Each deliberate break makes its test fail, 11 of 11:
+
+  | Deliberate break | Result |
+  |---|---|
+  | An accounting method is sent, overriding the company basis | caught |
+  | Client filter ids not sorted | caught |
+  | Cache ignores new syncs | caught |
+  | Parent-account totals dropped from expense accounts | caught |
+  | Not-specified and total columns kept as customers | caught |
+  | Other expenses left out of total expenses | caught |
+  | No-data flag ignored | caught |
+  | Unresolved non-admin gets whole-company figures | caught |
+  | Scoped user loses their client filter | caught |
+  | Rejected connection reported as a generic outage | caught |
+  | Dashboard reports 0 instead of unavailable | caught |
+
+  The last one was missed at first. `assertJson` compares values loosely, so it
+  treated `null` and `0` as equal: the test would have passed a dashboard showing
+  $0.00. Both summary tests now assert strictly with `assertJsonPath`, and the
+  mutation is caught.
+- **Live, against the sandbox realm:**
+  - Whole company: all-time revenue 10,201.77, expenses 8,558.31 and net income
+    1,643.46 on an accrual basis, identical to QuickBooks' own report.
+  - Amy's Bird Sanctuary, a client-scoped user: revenue 630.00 in the tools with
+    only her own name in the breakdown, and the same 630 from the summary endpoint
+    through the HTTP kernel, with her open balance (239) and total invoiced (772)
+    unchanged.
+  - The same report twice: 1,631 ms, then 12 ms from the cache.
+- **Not verified:** the dashboard in a browser, which needs an admin login.

@@ -62,13 +62,61 @@ class QuickBooksClientScope
         string $qboIdColumn,
         array $nameColumns
     ): void {
-        self::apply($query, [
+        self::apply($query, self::scopeOfContext($context), $qboIdColumn, $nameColumns);
+    }
+
+    /**
+     * The customers a QuickBooks report must be filtered to, for the same scope
+     * the query filters apply.
+     *
+     * Reports can only be filtered by customer id. A caller whose scope has not
+     * resolved, or whose selection carries no ids to filter by, gets null and
+     * must be shown nothing, never the whole company.
+     *
+     * @return array<int, string>|null  null: nothing; []: the whole company; otherwise these customer ids
+     */
+    public static function reportCustomersForContext(QuickBooksAiContext $context): ?array
+    {
+        return self::reportCustomers(self::scopeOfContext($context));
+    }
+
+    /**
+     * @return array<int, string>|null  null: nothing; []: the whole company; otherwise these customer ids
+     */
+    public static function reportCustomersForToken(QuickBooksToken $token): ?array
+    {
+        return self::reportCustomers(self::scopeOfToken($token));
+    }
+
+    /**
+     * @param  array{is_admin: bool, resolved: bool, specific: bool, qbo_ids: array<int, string>, names: array<int, string>}  $scope
+     * @return array<int, string>|null
+     */
+    private static function reportCustomers(array $scope): ?array
+    {
+        if (! $scope['resolved'] && ! $scope['is_admin']) {
+            return null;
+        }
+
+        if (! $scope['specific']) {
+            return [];
+        }
+
+        return $scope['qbo_ids'] === [] ? null : array_values($scope['qbo_ids']);
+    }
+
+    /**
+     * @return array{is_admin: bool, resolved: bool, specific: bool, qbo_ids: array<int, string>, names: array<int, string>}
+     */
+    private static function scopeOfContext(QuickBooksAiContext $context): array
+    {
+        return [
             'is_admin' => $context->isAdmin,
             'resolved' => $context->scopeResolved,
             'specific' => $context->scopeResolved && ! $context->hasAllClients,
             'qbo_ids' => $context->selectedClientQboIds,
             'names' => $context->selectedClientNames,
-        ], $qboIdColumn, $nameColumns);
+        ];
     }
 
     /**

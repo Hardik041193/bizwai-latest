@@ -2,16 +2,16 @@
 
 namespace App\Services\Ai\Tools;
 
-use App\Models\QuickBooksInvoice;
+use App\Models\QuickBooksToken;
 use App\Services\Ai\DateRangeResolver;
 use App\Services\Ai\QuickBooksAiContext;
-use App\Services\Ai\Tools\Concerns\ScopesToSelectedClients;
+use App\Services\Ai\Tools\Concerns\UsesQuickBooksReports;
 use App\Services\Ai\Tools\Contracts\AiTool;
-use Illuminate\Support\Facades\DB;
+use App\Services\QuickBooksReports;
 
 class GetRevenue implements AiTool
 {
-    use ScopesToSelectedClients;
+    use UsesQuickBooksReports;
 
     public function name(): string
     {
@@ -20,7 +20,7 @@ class GetRevenue implements AiTool
 
     public function description(): string
     {
-        return 'Get total revenue (paid invoices) for a period, broken down by top 10 customers.';
+        return "Get revenue for a period from QuickBooks' own Profit and Loss report, on the company's accounting basis, with the top 10 customers by income.";
     }
 
     public function parameters(): array
@@ -52,31 +52,25 @@ class GetRevenue implements AiTool
             $arguments['end_date'] ?? null
         );
 
-        $query = QuickBooksInvoice::where('realm_id', $context->realmId)
-            ->where('status', 'Paid')
-            ->whereBetween('txn_date', [$range['start']->toDateString(), $range['end']->toDateString()]);
-        $this->applyClientScope($query, $context, 'customer_qbo_id', ['customer_name']);
+        return $this->withReports($context, function (QuickBooksReports $reports, QuickBooksToken $token, array $customers) use ($range) {
+            $pnl = $reports->profitAndLoss($token, $range['start'], $range['end'], $customers);
+            $topCustomers = array_slice($reports->incomeByCustomer($token, $range['start'], $range['end'], $customers), 0, 10);
 
-        $byCustomer = (clone $query)
-            ->select('customer_name', 'customer_qbo_id', DB::raw('SUM(total_amount) as total'))
-            ->groupBy('customer_name', 'customer_qbo_id')
-            ->orderByDesc('total')
-            ->limit(10)
-            ->get()
-            ->map(fn ($row) => [
-                'customer_name' => $row->customer_name,
-                'customer_qbo_id' => $row->customer_qbo_id,
-                'total' => (float) $row->total,
-            ])
-            ->all();
-
-        return [
-            'period_label' => $range['label'],
-            'start_date' => $range['start']->toDateString(),
-            'end_date' => $range['end']->toDateString(),
-            'revenue' => (float) (clone $query)->sum('total_amount'),
-            'invoice_count' => (clone $query)->count(),
-            'by_customer' => $byCustomer,
-        ];
+            return [
+                'period_label' => $range['label'],
+                'start_date' => $range['start']->toDateString(),
+                'end_date' => $range['end']->toDateString(),
+                'accounting_basis' => $pnl['basis'],
+                'limited_to_your_clients' => $customers !== [],
+                'revenue' => $pnl['revenue'],
+                'income' => $pnl['income'],
+                'other_income' => $pnl['other_income'],
+                // Income only: other income is not attributed to customers.
+                'by_customer' => array_map(fn (array $customer) => [
+                    'customer_name' => $customer['customer_name'],
+                    'income' => $customer['income'],
+                ], $topCustomers),
+            ];
+        });
     }
 }

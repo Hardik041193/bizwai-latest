@@ -2,16 +2,16 @@
 
 namespace App\Services\Ai\Tools;
 
-use App\Models\QuickBooksTransaction;
+use App\Models\QuickBooksToken;
 use App\Services\Ai\DateRangeResolver;
 use App\Services\Ai\QuickBooksAiContext;
-use App\Services\Ai\Tools\Concerns\ScopesToSelectedClients;
+use App\Services\Ai\Tools\Concerns\UsesQuickBooksReports;
 use App\Services\Ai\Tools\Contracts\AiTool;
-use Illuminate\Support\Facades\DB;
+use App\Services\QuickBooksReports;
 
 class GetExpenses implements AiTool
 {
-    use ScopesToSelectedClients;
+    use UsesQuickBooksReports;
 
     public function name(): string
     {
@@ -20,7 +20,7 @@ class GetExpenses implements AiTool
 
     public function description(): string
     {
-        return 'Get total expenses (purchase transactions) for a period, broken down by top 10 accounts.';
+        return "Get expenses for a period from QuickBooks' own Profit and Loss report, on the company's accounting basis, with the 10 largest expense accounts.";
     }
 
     public function parameters(): array
@@ -52,29 +52,21 @@ class GetExpenses implements AiTool
             $arguments['end_date'] ?? null
         );
 
-        $query = QuickBooksTransaction::where('realm_id', $context->realmId)
-            ->whereBetween('txn_date', [$range['start']->toDateString(), $range['end']->toDateString()]);
-        $this->applyClientScope($query, $context, 'customer_qbo_id', ['entity_name']);
+        return $this->withReports($context, function (QuickBooksReports $reports, QuickBooksToken $token, array $customers) use ($range) {
+            $pnl = $reports->profitAndLoss($token, $range['start'], $range['end'], $customers);
 
-        $byAccount = (clone $query)
-            ->select('account_name', DB::raw('SUM(amount) as total'))
-            ->groupBy('account_name')
-            ->orderByDesc('total')
-            ->limit(10)
-            ->get()
-            ->map(fn ($row) => [
-                'account_name' => $row->account_name,
-                'total' => (float) $row->total,
-            ])
-            ->all();
-
-        return [
-            'period_label' => $range['label'],
-            'start_date' => $range['start']->toDateString(),
-            'end_date' => $range['end']->toDateString(),
-            'expenses' => (float) (clone $query)->sum('amount'),
-            'transaction_count' => (clone $query)->count(),
-            'by_account' => $byAccount,
-        ];
+            return [
+                'period_label' => $range['label'],
+                'start_date' => $range['start']->toDateString(),
+                'end_date' => $range['end']->toDateString(),
+                'accounting_basis' => $pnl['basis'],
+                'limited_to_your_clients' => $customers !== [],
+                'expenses' => $pnl['total_expenses'],
+                'cost_of_goods_sold' => $pnl['cost_of_goods_sold'],
+                'operating_expenses' => $pnl['expenses'],
+                'other_expenses' => $pnl['other_expenses'],
+                'by_account' => array_slice($pnl['expense_accounts'], 0, 10),
+            ];
+        });
     }
 }

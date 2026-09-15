@@ -78,6 +78,9 @@ Rules you must follow:
 - If a customer or date reference in the user's question is ambiguous, ask a clarifying question instead of guessing which one they mean.
 - Never mention internal implementation details such as table names, SQL, tool names, function names, or realm/company ids in your response text. Speak in plain business language.
 - Keep answers concise and focused on the numbers the user asked about.
+- Revenue, expense and profit figures come from QuickBooks' own Profit and Loss report on the company's accounting basis. When you give them, say whether they are on an accrual or cash basis, using the basis the tool result states.
+- If a tool returns "client_access_pending", explain that access to these figures is still being set up and they should be available once QuickBooks finishes syncing.
+- If a tool returns "quickbooks_reconnect_required", tell the user QuickBooks needs to be reconnected before these figures can be shown.
 PROMPT;
     }
 }

@@ -2,16 +2,16 @@
 
 namespace App\Services\Ai\Tools;
 
-use App\Models\QuickBooksInvoice;
-use App\Models\QuickBooksTransaction;
+use App\Models\QuickBooksToken;
 use App\Services\Ai\DateRangeResolver;
 use App\Services\Ai\QuickBooksAiContext;
-use App\Services\Ai\Tools\Concerns\ScopesToSelectedClients;
+use App\Services\Ai\Tools\Concerns\UsesQuickBooksReports;
 use App\Services\Ai\Tools\Contracts\AiTool;
+use App\Services\QuickBooksReports;
 
 class GetProfitAndLoss implements AiTool
 {
-    use ScopesToSelectedClients;
+    use UsesQuickBooksReports;
 
     public function name(): string
     {
@@ -20,7 +20,7 @@ class GetProfitAndLoss implements AiTool
 
     public function description(): string
     {
-        return 'Get revenue, expenses, and profit for a given period. Revenue is the sum of paid invoices; expenses is the sum of purchase transactions.';
+        return "Get revenue, expenses and profit for a period from QuickBooks' own Profit and Loss report, on the company's accounting basis (accrual or cash), with the main sections of the report.";
     }
 
     public function parameters(): array
@@ -52,45 +52,49 @@ class GetProfitAndLoss implements AiTool
             $arguments['end_date'] ?? null
         );
 
-        $figures = self::compute($range, $context);
+        return $this->withReports($context, function (QuickBooksReports $reports, QuickBooksToken $token, array $customers) use ($range) {
+            $pnl = $reports->profitAndLoss($token, $range['start'], $range['end'], $customers);
 
-        return [
-            'period_label' => $range['label'],
-            'start_date' => $range['start']->toDateString(),
-            'end_date' => $range['end']->toDateString(),
-            'revenue' => $figures['revenue'],
-            'expenses' => $figures['expenses'],
-            'profit' => $figures['profit'],
-        ];
+            return [
+                'period_label' => $range['label'],
+                'start_date' => $range['start']->toDateString(),
+                'end_date' => $range['end']->toDateString(),
+                'accounting_basis' => $pnl['basis'],
+                'limited_to_your_clients' => $customers !== [],
+                'has_activity' => $pnl['has_data'],
+                'revenue' => $pnl['revenue'],
+                'expenses' => $pnl['total_expenses'],
+                'profit' => $pnl['net_income'],
+                'sections' => [
+                    'income' => $pnl['income'],
+                    'other_income' => $pnl['other_income'],
+                    'cost_of_goods_sold' => $pnl['cost_of_goods_sold'],
+                    'gross_profit' => $pnl['gross_profit'],
+                    'operating_expenses' => $pnl['expenses'],
+                    'net_operating_income' => $pnl['net_operating_income'],
+                    'other_expenses' => $pnl['other_expenses'],
+                ],
+            ];
+        });
     }
 
     /**
-     * Shared revenue/expense computation reused by CompareFinancialPeriods so
-     * the two tools never disagree on how a period's figures are derived.
+     * Revenue, expenses and profit for a range. Shared with
+     * CompareFinancialPeriods so the two tools cannot disagree.
      *
      * @param  array{start: \Carbon\Carbon, end: \Carbon\Carbon, label: string}  $range
-     * @return array{revenue: float, expenses: float, profit: float}
+     * @param  array<int, string>  $customers
+     * @return array{revenue: float, expenses: float, profit: float, accounting_basis: ?string}
      */
-    public static function compute(array $range, QuickBooksAiContext $context): array
+    public static function figures(QuickBooksReports $reports, QuickBooksToken $token, array $range, array $customers): array
     {
-        $self = new self;
-
-        $invoiceQuery = QuickBooksInvoice::where('realm_id', $context->realmId)
-            ->where('status', 'Paid')
-            ->whereBetween('txn_date', [$range['start']->toDateString(), $range['end']->toDateString()]);
-        $self->applyClientScope($invoiceQuery, $context, 'customer_qbo_id', ['customer_name']);
-
-        $txnQuery = QuickBooksTransaction::where('realm_id', $context->realmId)
-            ->whereBetween('txn_date', [$range['start']->toDateString(), $range['end']->toDateString()]);
-        $self->applyClientScope($txnQuery, $context, 'customer_qbo_id', ['entity_name']);
-
-        $revenue = (float) $invoiceQuery->sum('total_amount');
-        $expenses = (float) $txnQuery->sum('amount');
+        $pnl = $reports->profitAndLoss($token, $range['start'], $range['end'], $customers);
 
         return [
-            'revenue' => $revenue,
-            'expenses' => $expenses,
-            'profit' => $revenue - $expenses,
+            'revenue' => $pnl['revenue'],
+            'expenses' => $pnl['total_expenses'],
+            'profit' => $pnl['net_income'],
+            'accounting_basis' => $pnl['basis'],
         ];
     }
 }
