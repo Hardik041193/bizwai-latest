@@ -220,6 +220,31 @@ class QuickBooksChangesSyncTest extends TestCase
         $this->assertSampleChangesApplied($result);
     }
 
+    /**
+     * The shape a live sandbox realm actually returned. One CDCResponse holding a
+     * QueryResponse per entity, but NOT in the order requested, with paging
+     * metadata beside each entity and an empty object for an entity with no
+     * changes. A parser matching entities by position, as the SDK's XML parser
+     * does, would file these changes under the wrong entity.
+     */
+    public function test_the_live_response_shape_is_read_by_entity_name_not_position(): void
+    {
+        $this->existingRows();
+
+        Http::fake(fn () => Http::response(<<<'JSON'
+            {"CDCResponse":[{"QueryResponse":[
+                {},
+                {"Invoice":[{"domain":"QBO","status":"Deleted","Id":"9"}],"startPosition":1,"maxResults":1,"totalCount":1},
+                {"Account":[{"Id":"1","Name":"New name","Active":true},{"Id":"2","Name":"Added","Active":true}],"startPosition":1,"maxResults":2,"totalCount":2},
+                {"Customer":[{"domain":"QBO","status":"Deleted","Id":"7"}],"startPosition":1,"maxResults":1,"totalCount":1}
+            ]}],"time":"2026-09-15T11:25:13.000-07:00"}
+            JSON, 200, ['Content-Type' => 'application/json']));
+
+        $result = app(QuickBooksService::class)->syncChanges($this->token(), now()->subDays(2));
+
+        $this->assertSampleChangesApplied($result);
+    }
+
     public function test_a_change_set_at_the_object_cap_is_reported_truncated_and_nothing_is_applied(): void
     {
         $this->fakeChanges(['Account' => array_map(

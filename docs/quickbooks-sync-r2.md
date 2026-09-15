@@ -8,7 +8,7 @@ flat as R3 adds more entities. Four pieces:
 | Pagination | Done |
 | One job per step, one page per job | Done |
 | CDC incremental sync | Done |
-| Backfill command for connected realms | Not started |
+| Backfill for connected realms | Not needed, see Deploying |
 
 ## 1. Pagination
 
@@ -139,6 +139,9 @@ sync repeats every one of them.
    after deploying is a full one. The `job_batches` table from R1 is now in use.
 3. `SyncQuickBooksDataJob::$tokenId` stays private, as before R2, so jobs queued
    before the deploy still unserialize.
+4. **Backfill with `php artisan sync:quickbooks`**, or let the 02:00 schedule do
+   it. No separate backfill command is needed: a realm without watermarks gets a
+   full sync, and that run writes them, so every later sync is a change sync.
 
 ## Known limitations
 
@@ -155,17 +158,20 @@ sync repeats every one of them.
   than 29 days without a successful sync falls back to a full sync, and a full
   sync cannot tell that a record was deleted, so those rows stay until removed
   by hand.
-- **The JSON shape of a change response was not confirmed against a live
-  QuickBooks response.** Intuit's reference page could not be fetched in full,
-  and the SDK parses the XML format. The parser accepts both a list and an
-  object at each level of `CDCResponse` and `QueryResponse`; confirm against a
-  live realm once a connection is available.
+- **Entities in a change response do not come back in request order.** Seen
+  live: a request for `Account,Customer,Invoice,Purchase` returned Invoice
+  second, after an empty entry. The SDK's XML parser matches entities by
+  position and would mislabel them. This parser matches by name, pinned by
+  `test_the_live_response_shape_is_read_by_entity_name_not_position`.
+- **A deleted object has not yet been seen in a live change response.** The
+  sandbox had no deletions in the window. Its shape (`status: "Deleted"` with
+  only `Id` and `MetaData`) comes from the raw XML quoted in SDK issue #431.
 - **Merged records** are assumed to arrive as `status: "Deleted"` for the record
   merged away, which the sources point to but do not state outright.
 
 ## Verified
 
-- **80 tests pass** (268 assertions), run with
+- **81 tests pass** (277 assertions), run with
   `docker run --rm -v "$PWD":/app -w /app --user "$(id -u):$(id -g)" php:8.3-cli php artisan test`.
   `QuickBooksSyncBatchIntegrationTest` drives the orchestrator batch through
   `queue:work` on a database queue, covering both paged and change syncs on a
@@ -191,11 +197,18 @@ sync repeats every one of them.
   | Truncated fallback dispatched outside the live batch | caught |
   | Orchestrator never chooses change sync | caught |
 
-- **Live, against the connected realm:** a run on an expired connection closed out
-  all six steps in 4 seconds, cancelled the batch, and failed exactly one job,
-  with no retries.
-- **Not yet verified live:** paging through a real batch, and a change sync
-  against a real QuickBooks response. The only connection on the development
-  machine has a refresh token issued before the token expiry fix, so it has
-  expired and must be reconnected first. The integration tests cover the same
-  code paths with QuickBooks faked.
+- **Live, against the sandbox realm:**
+  - An expired connection closed out all six steps in 4 seconds, cancelled the
+    batch, and failed exactly one job, with no retries.
+  - The first sync on the new code ran in full: 6 jobs, every step complete, and
+    a watermark written for each entity.
+  - The next sync chose change data capture: a batch of 3 jobs and one change
+    request (`changedSince` with a `+00:00` offset accepted). It applied 4 real
+    changes (2 accounts, 1 customer, 1 invoice), advanced all four data
+    watermarks together, and left local row counts unchanged. 9 seconds end to
+    end.
+  - A raw change request parsed to exactly the counts found by walking the JSON
+    independently.
+- **Not yet verified live:** paging across more than one page inside a real
+  batch (every entity in this realm fits in one page of 1000), and a deleted
+  object. Integration tests cover both with QuickBooks faked.
