@@ -7,7 +7,8 @@ complete data. It ships in steps:
 |---|---|
 | 1. Sync bills, payments, sales receipts and credit memos | Done |
 | 2. Revenue, expenses and profit from QuickBooks' own Profit and Loss report, cached, with client scoping | Done |
-| 3. The AI chat qualifies answers while data is still importing | Not started |
+| 3. The AI chat qualifies answers while data is still importing | Done |
+| 4. Chat tools that list bills, payments, sales receipts and credit memos | Not started |
 
 The original plan had separate steps for computing figures from the complete
 data and for QuickBooks' reports. They merged: the evidence in step 2 showed the
@@ -258,3 +259,99 @@ opcache without timestamp validation) needs reloading.
     unchanged.
   - The same report twice: 1,631 ms, then 12 ms from the cache.
 - **Not verified:** the dashboard in a browser, which needs an admin login.
+
+## Step 3: answers from data still importing are qualified
+
+After step 2, revenue, expense and profit figures are read live from QuickBooks,
+so a sync in progress cannot skew them. Answers built from synced tables still
+can: invoice lists and counts, customers, transactions, open balances. Before
+this step, "you have 3 overdue invoices" read as final even while invoices were
+still importing.
+
+Tools that read synced tables (`get_invoices`, `get_customers`,
+`get_transactions`, and the counts in `get_company_summary`) now attach
+`data_freshness`:
+
+```json
+"data_freshness": {
+  "complete": false,
+  "still_importing": ["Invoices"],
+  "failed_to_import": [],
+  "last_synced_at": "2026-09-15T18:49:37+00:00"
+}
+```
+
+- It covers only the entities that tool reads, so a customers sync in progress
+  does not qualify an invoice list.
+- A step that has never run for the company counts as still importing.
+- `failed_to_import` means the latest attempt failed; what is shown may come
+  from an earlier sync.
+- `last_synced_at` is the oldest of the steps read, so no part of the answer is
+  older than stated.
+
+When `complete` is false, the system prompt tells the assistant to say the result
+covers only data imported so far and to name what is still importing or failed.
+
+### Also fixed: a refused token refresh crashed the dashboard
+
+Found while testing this step. When Intuit refuses to refresh an access token,
+the QuickBooks SDK throws `ServiceException`, which extends `\Exception`, not
+`RuntimeException`. Every caller only caught `RuntimeException`, so the refusal
+escaped them all:
+
+| Caller | Before |
+|---|---|
+| Dashboard summary endpoint | HTTP 500 |
+| AI report tools | a generic "tool failed" |
+| Sync jobs | three backed-off retries of a refusal that could never succeed |
+
+A deliberately bogus refresh token sent to Intuit came back as HTTP 400 with
+`invalid_grant`. `refreshTokenIfNeeded` now translates SDK exceptions at the
+boundary:
+
+- **A refusal** (HTTP 400 or 401, or `invalid_grant`) becomes
+  `QuickBooksReauthorizationRequired`. The dashboard shows "Reconnect
+  QuickBooks", the chat says the same, and a sync closes out at once. The refresh
+  token is also marked expired, so later requests stop immediately instead of
+  asking Intuit to refuse them again. That write happens after the locked
+  transaction rolls back, so it is not undone with it.
+- **Any other SDK failure**, such as an outage, becomes a `RuntimeException`
+  that callers already handle, and the connection is left alone.
+
+**Not fixed here:** the OAuth callback has the same gap. The SDK's code exchange
+throws `SdkException`, which the callback's `RuntimeException` handler does not
+catch, so a bad or missing authorization code would fail with a server error
+instead of redirecting to the portal's QuickBooks error page.
+
+### Deploying
+
+No migrations. Run `php artisan queue:restart` so workers pick up the refresh
+handling in sync jobs.
+
+### Verified
+
+- **125 tests pass** (463 assertions), including `QuickBooksAiDataFreshnessTest`
+  and `QuickBooksTokenRefreshFailureTest`. The refresh tests stand in for Intuit
+  with the refusal a live call returned, so they need no network.
+- **Mutation checks.** Each deliberate break makes its test fail, 9 of 9:
+
+  | Deliberate break | Result |
+  |---|---|
+  | A refused refresh is not translated into reconnect-required | caught |
+  | A refused refresh token is not recorded, so Intuit is asked again | caught |
+  | An outage is treated as a refusal | caught |
+  | SDK exceptions not caught at the boundary | caught |
+  | Failed imports not reported | caught |
+  | Every entity considered, not just the ones the tool reads | caught |
+  | Never-synced data treated as complete | caught |
+  | Newest sync time reported instead of the oldest | caught |
+  | Summary checks the wrong entities | caught |
+
+- **Live:** for a client-scoped user on the sandbox realm, `get_invoices` and
+  `get_company_summary` reported `complete: true` with the real last sync time.
+  A deliberately bogus refresh token sent to Intuit came back as HTTP 400,
+  `invalid_grant`, as a `ServiceException` that is not a `RuntimeException`.
+- **One test had been calling Intuit.** It time-travelled after creating its
+  token, so the token looked expired and was refreshed over the network. That
+  is how the refresh bug surfaced. The test now connects after the time travel.
+- **Not verified live:** a refusal for a real, previously working connection.

@@ -5,12 +5,13 @@ namespace App\Services\Ai\Tools;
 use App\Models\QuickBooksInvoice;
 use App\Services\Ai\DateRangeResolver;
 use App\Services\Ai\QuickBooksAiContext;
+use App\Services\Ai\Tools\Concerns\ReportsDataFreshness;
 use App\Services\Ai\Tools\Concerns\ScopesToSelectedClients;
 use App\Services\Ai\Tools\Contracts\AiTool;
 
 class GetInvoices implements AiTool
 {
-    use ScopesToSelectedClients;
+    use ReportsDataFreshness, ScopesToSelectedClients;
 
     public function name(): string
     {
@@ -78,9 +79,9 @@ class GetInvoices implements AiTool
             ])
             ->all();
 
-        return [
+        return $this->withDataFreshness([
             'invoices' => $invoices,
             'total_count' => $totalCount,
-        ];
+        ], $context, ['invoices']);
     }
 }

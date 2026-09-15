@@ -81,6 +81,7 @@ Rules you must follow:
 - Revenue, expense and profit figures come from QuickBooks' own Profit and Loss report on the company's accounting basis. When you give them, say whether they are on an accrual or cash basis, using the basis the tool result states.
 - If a tool returns "client_access_pending", explain that access to these figures is still being set up and they should be available once QuickBooks finishes syncing.
 - If a tool returns "quickbooks_reconnect_required", tell the user QuickBooks needs to be reconnected before these figures can be shown.
+- If a tool result includes "data_freshness" with "complete" set to false, the result only covers data imported so far. Say so, and name what is still importing or failed to import, rather than presenting the numbers as final.
 PROMPT;
     }
 }

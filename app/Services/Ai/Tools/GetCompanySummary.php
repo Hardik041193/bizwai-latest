@@ -6,6 +6,7 @@ use App\Models\QuickBooksCustomer;
 use App\Models\QuickBooksInvoice;
 use App\Models\QuickBooksToken;
 use App\Services\Ai\QuickBooksAiContext;
+use App\Services\Ai\Tools\Concerns\ReportsDataFreshness;
 use App\Services\Ai\Tools\Concerns\ScopesToSelectedClients;
 use App\Services\Ai\Tools\Concerns\UsesQuickBooksReports;
 use App\Services\Ai\Tools\Contracts\AiTool;
@@ -14,7 +15,7 @@ use Illuminate\Support\Carbon;
 
 class GetCompanySummary implements AiTool
 {
-    use ScopesToSelectedClients, UsesQuickBooksReports;
+    use ReportsDataFreshness, ScopesToSelectedClients, UsesQuickBooksReports;
 
     public function name(): string
     {
@@ -52,6 +53,10 @@ class GetCompanySummary implements AiTool
             'open_balance' => (float) (clone $invoiceQuery)->whereIn('status', ['Open', 'Overdue'])->sum('balance'),
             'overdue_invoices' => (clone $invoiceQuery)->where('status', 'Overdue')->count(),
         ];
+
+        // The counts above come from synced tables, so they carry the state of
+        // that data. The revenue and expense figures below are read live.
+        $summary = $this->withDataFreshness($summary, $context, ['customers', 'invoices']);
 
         $pnl = $this->withReports($context, fn (QuickBooksReports $reports, QuickBooksToken $token, array $customers) => $reports->profitAndLoss(
             $token, Carbon::parse(QuickBooksReports::ALL_TIME_START), Carbon::now(), $customers
