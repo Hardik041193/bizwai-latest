@@ -107,6 +107,34 @@ class QuickBooksSyncState extends Model
             [
                 'status' => self::STATUS_SYNCING,
                 'started_at' => now(),
+                // Clear the previous run's figures so a count shown mid-sync
+                // belongs to this run.
+                'records_synced' => 0,
+                'start_position' => null,
+                'error' => null,
+            ]
+        );
+    }
+
+    /**
+     * Record that a page finished, and where the next one starts.
+     *
+     * The count is a running total derived from the page position rather than
+     * an increment, so a retried page, or two overlapping runs, overwrite the
+     * figure instead of double-counting it.
+     */
+    public static function recordPageProgress(
+        string $realmId,
+        string $entity,
+        int $recordsSoFar,
+        int $nextPosition
+    ): void {
+        self::updateOrCreate(
+            ['realm_id' => $realmId, 'entity' => $entity],
+            [
+                'status' => self::STATUS_SYNCING,
+                'records_synced' => $recordsSoFar,
+                'start_position' => $nextPosition,
                 'error' => null,
             ]
         );
@@ -156,6 +184,28 @@ class QuickBooksSyncState extends Model
     // ──────────────────────────────────────────────────────────────────────
     // Progress reporting
     // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * Whether a sync for this realm is genuinely still running.
+     *
+     * Rows can be left unfinished by a worker that died without reaching a
+     * failure handler, and treating those as live would block every later sync
+     * for good. A run that is really moving writes a row with each page, so the
+     * realm only counts as busy while something is unfinished AND some row was
+     * written recently.
+     */
+    public static function isInProgress(string $realmId, int $staleAfterMinutes = 15): bool
+    {
+        $rows = self::where('realm_id', $realmId)->get(['status', 'updated_at']);
+
+        if (! $rows->contains(fn (self $row) => ! $row->isFinished())) {
+            return false;
+        }
+
+        $lastWrite = $rows->max('updated_at');
+
+        return $lastWrite !== null && $lastWrite->greaterThan(now()->subMinutes($staleAfterMinutes));
+    }
 
     /**
      * Progress snapshot for a realm, shaped for both the frontend poller and

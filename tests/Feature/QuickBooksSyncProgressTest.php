@@ -94,6 +94,25 @@ class QuickBooksSyncProgressTest extends TestCase
         Queue::assertPushed(SyncQuickBooksDataJob::class);
     }
 
+    /**
+     * Overlapping runs are data-safe but double the metered QuickBooks calls.
+     */
+    public function test_triggering_a_sync_while_one_is_running_does_not_start_another(): void
+    {
+        Queue::fake();
+        $user = $this->connectedUser();
+        Sanctum::actingAs($user);
+
+        State::markQueued('REALM_HTTP_1');
+
+        $this->postJson('/api/quickbooks/sync')
+            ->assertOk()
+            ->assertJson(['message' => 'A sync is already running.'])
+            ->assertJsonPath('progress.complete', false);
+
+        Queue::assertNothingPushed();
+    }
+
     public function test_sync_is_rejected_when_quickbooks_is_not_connected(): void
     {
         Queue::fake();

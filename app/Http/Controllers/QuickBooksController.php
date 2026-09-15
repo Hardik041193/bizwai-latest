@@ -258,6 +258,16 @@ class QuickBooksController extends Controller
             return response()->json(['message' => 'QuickBooks account is not connected.'], 422);
         }
 
+        // A run is already in flight: report it rather than start another.
+        // Overlapping runs are data-safe (every write is an upsert) but they
+        // double the metered QuickBooks read calls for nothing.
+        if (QuickBooksSyncState::isInProgress($token->realm_id)) {
+            return response()->json([
+                'message' => 'A sync is already running.',
+                'progress' => QuickBooksSyncState::progressFor($token->realm_id),
+            ]);
+        }
+
         // Seed the state rows here, in the request, not in the job. The job may
         // not be picked up by a worker for a second or two, and in that gap the
         // frontend's first progress poll would otherwise read the previous

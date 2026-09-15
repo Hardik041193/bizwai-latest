@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\QuickBooksReauthorizationRequired;
 use App\Models\QuickBooksAccount;
 use App\Models\QuickBooksCustomer;
 use App\Models\QuickBooksInvoice;
@@ -24,6 +25,11 @@ class QuickBooksService
      * Far above any realistic realm, and a bound on a misbehaving response.
      */
     private const MAX_PAGES = 200;
+
+    /**
+     * Sync steps fetched page by page. Every other step runs in one go.
+     */
+    public const PAGED_ENTITIES = ['accounts', 'customers', 'invoices', 'transactions'];
 
     /**
      * Build a DataService instance for authorization URL generation only
@@ -167,7 +173,7 @@ class QuickBooksService
             }
 
             if ($fresh->isRefreshTokenExpired()) {
-                throw new RuntimeException(
+                throw new QuickBooksReauthorizationRequired(
                     'QuickBooks refresh token has expired. The user must reconnect their account.'
                 );
             }
@@ -384,9 +390,137 @@ class QuickBooksService
      */
     public function syncAccounts(QuickBooksToken $token): int
     {
-        $rows = $this->qbQuery($token, 'SELECT * FROM Account', 'Account');
-        $synced = 0;
+        return $this->syncPagedEntity($token, 'accounts');
+    }
 
+    /**
+     * Sync Customers from QBO.
+     */
+    public function syncCustomers(QuickBooksToken $token): int
+    {
+        return $this->syncPagedEntity($token, 'customers');
+    }
+
+    /**
+     * Sync Invoices from QBO.
+     */
+    public function syncInvoices(QuickBooksToken $token): int
+    {
+        return $this->syncPagedEntity($token, 'invoices');
+    }
+
+    /**
+     * Sync Transactions (Purchase/Expense records) from QBO.
+     */
+    public function syncTransactions(QuickBooksToken $token): int
+    {
+        return $this->syncPagedEntity($token, 'transactions');
+    }
+
+    /**
+     * Fetch and store one page of a paged entity.
+     *
+     * The query is chosen on the first page and must be passed back unchanged for
+     * every later page. Invoices and purchases use a full-history query while the
+     * realm has no rows, but page one creates rows, so choosing again on page two
+     * would switch to the date-windowed query and walk STARTPOSITION through a
+     * different result set, skipping or repeating records.
+     *
+     * @return array{count: int, next_position: int|null, query: string}
+     */
+    public function syncEntityPage(
+        QuickBooksToken $token,
+        string $entity,
+        int $startPosition = 1,
+        ?string $query = null
+    ): array {
+        $definition = $this->pagedEntity($entity);
+        $query ??= $definition['query']($token);
+        $pageSize = $this->pageSize();
+
+        $rows = $this->fetchPage($token, $query, $definition['key'], $startPosition, $pageSize);
+        $count = $definition['persist']($token, $rows);
+
+        // A full page may be followed by more; a short one is the last.
+        $hasMore = count($rows) === $pageSize;
+        $pageNumber = intdiv($startPosition - 1, $pageSize) + 1;
+
+        if ($hasMore && $pageNumber >= self::MAX_PAGES) {
+            Log::warning('QuickBooks: hit the page ceiling, results may be incomplete.', [
+                'realm_id' => $token->realm_id,
+                'entity' => $entity,
+                'pages' => $pageNumber,
+            ]);
+
+            $hasMore = false;
+        }
+
+        return [
+            'count' => $count,
+            'next_position' => $hasMore ? $startPosition + $pageSize : null,
+            'query' => $query,
+        ];
+    }
+
+    /**
+     * Sync every page of a paged entity within this process.
+     *
+     * Queued syncs page through SyncQuickBooksEntityJob instead, one job per
+     * page; both share the same query and persistence below.
+     */
+    private function syncPagedEntity(QuickBooksToken $token, string $entity): int
+    {
+        $definition = $this->pagedEntity($entity);
+
+        $rows = $this->qbQuery($token, $definition['query']($token), $definition['key']);
+        $synced = $definition['persist']($token, $rows);
+
+        Log::info("QuickBooks: synced {$synced} {$entity} for realm {$token->realm_id}.");
+
+        return $synced;
+    }
+
+    /**
+     * How a paged entity is queried and stored.
+     *
+     * @return array{key: string, query: \Closure(QuickBooksToken): string, persist: \Closure(QuickBooksToken, array): int}
+     */
+    private function pagedEntity(string $entity): array
+    {
+        return match ($entity) {
+            'accounts' => [
+                'key' => 'Account',
+                'query' => fn (QuickBooksToken $token) => 'SELECT * FROM Account',
+                'persist' => fn (QuickBooksToken $token, array $rows) => $this->persistAccounts($token, $rows),
+            ],
+            'customers' => [
+                'key' => 'Customer',
+                'query' => fn (QuickBooksToken $token) => 'SELECT * FROM Customer',
+                'persist' => fn (QuickBooksToken $token, array $rows) => $this->persistCustomers($token, $rows),
+            ],
+            'invoices' => [
+                'key' => 'Invoice',
+                'query' => fn (QuickBooksToken $token) => $this->entityQuery(
+                    'Invoice', QuickBooksInvoice::where('realm_id', $token->realm_id)->exists()
+                ),
+                'persist' => fn (QuickBooksToken $token, array $rows) => $this->persistInvoices($token, $rows),
+            ],
+            'transactions' => [
+                'key' => 'Purchase',
+                'query' => fn (QuickBooksToken $token) => $this->entityQuery(
+                    'Purchase', QuickBooksTransaction::where('realm_id', $token->realm_id)->exists()
+                ),
+                'persist' => fn (QuickBooksToken $token, array $rows) => $this->persistTransactions($token, $rows),
+            ],
+            default => throw new \InvalidArgumentException("Not a paged QuickBooks entity: {$entity}"),
+        };
+    }
+
+    /**
+     * @param  array<\stdClass>  $rows
+     */
+    private function persistAccounts(QuickBooksToken $token, array $rows): int
+    {
         foreach ($rows as $account) {
             QuickBooksAccount::updateOrCreate(
                 ['realm_id' => $token->realm_id, 'qbo_id' => $account->Id],
@@ -401,22 +535,16 @@ class QuickBooksService
                     'synced_at' => now(),
                 ]
             );
-            $synced++;
         }
 
-        Log::info("QuickBooks: synced {$synced} accounts for realm {$token->realm_id}.");
-
-        return $synced;
+        return count($rows);
     }
 
     /**
-     * Sync Customers from QBO.
+     * @param  array<\stdClass>  $rows
      */
-    public function syncCustomers(QuickBooksToken $token): int
+    private function persistCustomers(QuickBooksToken $token, array $rows): int
     {
-        $rows = $this->qbQuery($token, 'SELECT * FROM Customer', 'Customer');
-        $synced = 0;
-
         foreach ($rows as $customer) {
             QuickBooksCustomer::updateOrCreate(
                 ['realm_id' => $token->realm_id, 'qbo_id' => $customer->Id],
@@ -430,26 +558,16 @@ class QuickBooksService
                     'synced_at' => now(),
                 ]
             );
-            $synced++;
         }
 
-        Log::info("QuickBooks: synced {$synced} customers for realm {$token->realm_id}.");
-
-        return $synced;
+        return count($rows);
     }
 
     /**
-     * Sync Invoices from QBO.
+     * @param  array<\stdClass>  $rows
      */
-    public function syncInvoices(QuickBooksToken $token): int
+    private function persistInvoices(QuickBooksToken $token, array $rows): int
     {
-        $rows = $this->qbQuery(
-            $token,
-            $this->entityQuery('Invoice', QuickBooksInvoice::where('realm_id', $token->realm_id)->exists()),
-            'Invoice'
-        );
-        $synced = 0;
-
         foreach ($rows as $invoice) {
             $lineItems = [];
 
@@ -489,26 +607,16 @@ class QuickBooksService
                     'synced_at' => now(),
                 ]
             );
-            $synced++;
         }
 
-        Log::info("QuickBooks: synced {$synced} invoices for realm {$token->realm_id}.");
-
-        return $synced;
+        return count($rows);
     }
 
     /**
-     * Sync Transactions (Purchase/Expense records) from QBO.
+     * @param  array<\stdClass>  $rows
      */
-    public function syncTransactions(QuickBooksToken $token): int
+    private function persistTransactions(QuickBooksToken $token, array $rows): int
     {
-        $rows = $this->qbQuery(
-            $token,
-            $this->entityQuery('Purchase', QuickBooksTransaction::where('realm_id', $token->realm_id)->exists()),
-            'Purchase'
-        );
-        $synced = 0;
-
         foreach ($rows as $txn) {
             $accountName = null;
             $amount = 0;
@@ -535,16 +643,17 @@ class QuickBooksService
                     'synced_at' => now(),
                 ]
             );
-            $synced++;
         }
 
-        Log::info("QuickBooks: synced {$synced} transactions for realm {$token->realm_id}.");
-
-        return $synced;
+        return count($rows);
     }
 
     /**
      * Run every sync operation for a token, recording per-entity progress.
+     *
+     * Runs everything inline in one process. Queued syncs go through
+     * SyncQuickBooksDataJob's batch instead; this remains for synchronous
+     * callers, and both share the same per-entity code.
      *
      * A failing entity is recorded and skipped rather than aborting the run, so
      * one bad entity cannot deny the user every other figure on the dashboard.
@@ -789,14 +898,7 @@ class QuickBooksService
      */
     private function qbQuery(QuickBooksToken $token, string $query, string $entityKey): array
     {
-        $token = $this->refreshTokenIfNeeded($token);
-
-        $baseUrl = config('quickbooks.base_url') === 'Production'
-            ? 'https://quickbooks.api.intuit.com'
-            : 'https://sandbox-quickbooks.api.intuit.com';
-
-        // QuickBooks refuses anything above 1000 per page.
-        $pageSize = max(1, min((int) config('quickbooks.max_results', 1000), 1000));
+        $pageSize = $this->pageSize();
 
         // IQL uses 1-based positions.
         $startPosition = 1;
@@ -804,23 +906,7 @@ class QuickBooksService
         $pages = 0;
 
         do {
-            $paged = "{$query} STARTPOSITION {$startPosition} MAXRESULTS {$pageSize}";
-
-            // GET with URL-encoded query param — avoids POST body parsing issues.
-            $response = Http::withToken($token->access_token)
-                ->accept('application/json')
-                ->get("{$baseUrl}/v3/company/{$token->realm_id}/query", [
-                    'query' => $paged,
-                    'minorversion' => '65',
-                ]);
-
-            if ($response->failed()) {
-                throw new RuntimeException(
-                    "QuickBooks API error ({$response->status()}): ".$response->body()
-                );
-            }
-
-            $page = (array) ($response->object()->QueryResponse->{$entityKey} ?? []);
+            $page = $this->fetchPage($token, $query, $entityKey, $startPosition, $pageSize);
             $results = array_merge($results, $page);
 
             $startPosition += $pageSize;
@@ -852,6 +938,64 @@ class QuickBooksService
         }
 
         return $results;
+    }
+
+    /**
+     * Fetch a single page of an IQL query.
+     *
+     * A 401 means QuickBooks rejected the connection outright (revoked, or
+     * removed on Intuit's side). No retry can fix that, so it is raised as
+     * QuickBooksReauthorizationRequired for sync jobs to fail fast on.
+     *
+     * @return array<\stdClass>
+     *
+     * @throws QuickBooksReauthorizationRequired when the connection is rejected
+     * @throws RuntimeException on any other HTTP or API error
+     */
+    private function fetchPage(
+        QuickBooksToken $token,
+        string $query,
+        string $entityKey,
+        int $startPosition,
+        int $pageSize
+    ): array {
+        // Checked per page rather than per query: paging a large realm can
+        // outlast the one-hour access token.
+        $token = $this->refreshTokenIfNeeded($token);
+
+        $baseUrl = config('quickbooks.base_url') === 'Production'
+            ? 'https://quickbooks.api.intuit.com'
+            : 'https://sandbox-quickbooks.api.intuit.com';
+
+        // GET with URL-encoded query param — avoids POST body parsing issues.
+        $response = Http::withToken($token->access_token)
+            ->accept('application/json')
+            ->get("{$baseUrl}/v3/company/{$token->realm_id}/query", [
+                'query' => "{$query} STARTPOSITION {$startPosition} MAXRESULTS {$pageSize}",
+                'minorversion' => '65',
+            ]);
+
+        if ($response->status() === 401) {
+            throw new QuickBooksReauthorizationRequired(
+                'QuickBooks API error (401): the connection was rejected. The user must reconnect their account.'
+            );
+        }
+
+        if ($response->failed()) {
+            throw new RuntimeException(
+                "QuickBooks API error ({$response->status()}): ".$response->body()
+            );
+        }
+
+        return (array) ($response->object()->QueryResponse->{$entityKey} ?? []);
+    }
+
+    /**
+     * Records per page. QuickBooks refuses anything above 1000.
+     */
+    private function pageSize(): int
+    {
+        return max(1, min((int) config('quickbooks.max_results', 1000), 1000));
     }
 
     /**

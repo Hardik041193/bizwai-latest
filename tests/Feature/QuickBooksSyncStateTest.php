@@ -157,6 +157,46 @@ class QuickBooksSyncStateTest extends TestCase
         $this->assertSame('idle', $row['status']);
     }
 
+    public function test_a_realm_with_freshly_written_unfinished_steps_is_in_progress(): void
+    {
+        State::markQueued($this->realm);
+
+        $this->assertTrue(State::isInProgress($this->realm));
+    }
+
+    public function test_a_finished_realm_is_not_in_progress(): void
+    {
+        foreach (State::ENTITIES as $entity) {
+            State::markComplete($this->realm, $entity, 1);
+        }
+
+        $this->assertFalse(State::isInProgress($this->realm));
+        $this->assertFalse(State::isInProgress('NEVER_SYNCED'));
+    }
+
+    /**
+     * A worker that died without reaching a failure handler leaves rows
+     * unfinished forever. Treating those as live would block every later sync.
+     */
+    public function test_unfinished_steps_nobody_has_written_recently_are_not_in_progress(): void
+    {
+        State::markQueued($this->realm);
+        State::where('realm_id', $this->realm)->update(['updated_at' => now()->subMinutes(20)]);
+
+        $this->assertFalse(State::isInProgress($this->realm));
+    }
+
+    public function test_page_progress_is_a_running_total_not_an_increment(): void
+    {
+        State::recordPageProgress($this->realm, 'invoices', 1000, 1001);
+        State::recordPageProgress($this->realm, 'invoices', 1000, 1001);
+
+        $row = State::where('realm_id', $this->realm)->where('entity', 'invoices')->first();
+        $this->assertSame(1000, $row->records_synced);
+        $this->assertSame(1001, $row->start_position);
+        $this->assertSame(State::STATUS_SYNCING, $row->status);
+    }
+
     public function test_state_is_scoped_per_realm(): void
     {
         State::markQueued($this->realm);
