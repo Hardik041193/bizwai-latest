@@ -19,7 +19,9 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use QuickBooksOnline\API\Core\OAuth\OAuth2\OAuth2AccessToken;
 use QuickBooksOnline\API\DataService\DataService;
+use QuickBooksOnline\API\Exception\IdsException;
 use RuntimeException;
 
 class QuickBooksService
@@ -186,6 +188,42 @@ class QuickBooksService
         // Re-read the token with a pessimistic lock to prevent concurrent refreshes.
         // If two requests hit this method simultaneously, only one will actually
         // call the QBO API; the other will wait and then find the token already fresh.
+        try {
+            return $this->refreshUnderLock($token);
+        } catch (IdsException $e) {
+            // The SDK's exceptions extend \Exception, not RuntimeException, so
+            // they used to slip past every caller's error handling: the dashboard
+            // summary answered 500 and sync jobs retried a refusal that could
+            // never succeed. They are translated into this app's types here.
+            if (! $this->isRejectedRefresh($e)) {
+                throw new RuntimeException('QuickBooks token refresh failed: '.$e->getMessage(), 0, $e);
+            }
+
+            // Intuit will not accept this refresh token again. Record that, so
+            // later requests stop at once instead of asking Intuit to refuse
+            // them each time. Written here, after the locked transaction has
+            // rolled back, so the write is not undone with it.
+            QuickBooksToken::where('id', $token->id)->update(['refresh_token_expires_at' => now()->subSecond()]);
+
+            throw new QuickBooksReauthorizationRequired(
+                'QuickBooks rejected the refresh token. The user must reconnect their account.', 0, $e
+            );
+        }
+    }
+
+    /**
+     * Intuit refused the refresh token itself: HTTP 400 or 401, which on a live
+     * realm came back as "invalid_grant". Anything else (a timeout, a 5xx) may
+     * succeed on a retry.
+     */
+    private function isRejectedRefresh(IdsException $e): bool
+    {
+        return in_array((int) $e->getCode(), [400, 401], true)
+            || str_contains($e->getMessage(), 'invalid_grant');
+    }
+
+    private function refreshUnderLock(QuickBooksToken $token): QuickBooksToken
+    {
         return DB::transaction(function () use ($token) {
             /** @var QuickBooksToken $fresh */
             $fresh = QuickBooksToken::where('id', $token->id)->lockForUpdate()->first();
@@ -206,21 +244,7 @@ class QuickBooksService
                 );
             }
 
-            $dataService = DataService::Configure([
-                'auth_mode' => 'oauth2',
-                'ClientID' => config('quickbooks.client_id'),
-                'ClientSecret' => config('quickbooks.client_secret'),
-                'RedirectURI' => config('quickbooks.redirect_uri'),
-                'scope' => config('quickbooks.scope'),
-                'baseUrl' => config('quickbooks.base_url'),
-                'accessTokenKey' => $fresh->access_token,
-                'refreshTokenKey' => $fresh->refresh_token,
-                'QBORealmID' => $fresh->realm_id,
-            ]);
-
-            /** @var \QuickBooksOnline\API\Core\OAuth\OAuth2\OAuth2LoginHelper $helper */
-            $helper = $dataService->getOAuth2LoginHelper();
-            $newToken = $helper->refreshToken();
+            $newToken = $this->requestTokenRefresh($fresh);
 
             $fresh->update([
                 'access_token' => $newToken->getAccessToken(),
@@ -235,6 +259,32 @@ class QuickBooksService
 
             return $fresh->fresh();
         });
+    }
+
+    /**
+     * Ask Intuit for a new access token. Its own method so tests can stand in
+     * for Intuit without a network call.
+     *
+     * @throws IdsException when Intuit refuses or cannot be reached
+     */
+    protected function requestTokenRefresh(QuickBooksToken $token): OAuth2AccessToken
+    {
+        $dataService = DataService::Configure([
+            'auth_mode' => 'oauth2',
+            'ClientID' => config('quickbooks.client_id'),
+            'ClientSecret' => config('quickbooks.client_secret'),
+            'RedirectURI' => config('quickbooks.redirect_uri'),
+            'scope' => config('quickbooks.scope'),
+            'baseUrl' => config('quickbooks.base_url'),
+            'accessTokenKey' => $token->access_token,
+            'refreshTokenKey' => $token->refresh_token,
+            'QBORealmID' => $token->realm_id,
+        ]);
+
+        /** @var \QuickBooksOnline\API\Core\OAuth\OAuth2\OAuth2LoginHelper $helper */
+        $helper = $dataService->getOAuth2LoginHelper();
+
+        return $helper->refreshToken();
     }
 
     /**
