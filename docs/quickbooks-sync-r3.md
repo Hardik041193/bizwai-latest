@@ -8,7 +8,7 @@ complete data. It ships in steps:
 | 1. Sync bills, payments, sales receipts and credit memos | Done |
 | 2. Revenue, expenses and profit from QuickBooks' own Profit and Loss report, cached, with client scoping | Done |
 | 3. The AI chat qualifies answers while data is still importing | Done |
-| 4. Chat tools that list bills, payments, sales receipts and credit memos | Not started |
+| 4. Chat tools that list bills, payments, sales receipts and credit memos | Done |
 
 The original plan had separate steps for computing figures from the complete
 data and for QuickBooks' reports. They merged: the evidence in step 2 showed the
@@ -220,9 +220,7 @@ opcache without timestamp validation) needs reloading.
   their customers.
 - **The dashboard change is type-checked and builds but has not been viewed in a
   browser.** It needs an admin login.
-- **Chat lists do not cover the new entities yet.** `get_invoices`,
-  `get_customers` and `get_transactions` still read synced tables; no tool lists
-  bills, payments, sales receipts or credit memos.
+- **Chat lists did not cover the new entities at first.** Step 4 adds them.
 
 ### Verified
 
@@ -355,3 +353,75 @@ handling in sync jobs.
   token, so the token looked expired and was refreshed over the network. That
   is how the refresh bug surfaced. The test now connects after the time travel.
 - **Not verified live:** a refusal for a real, previously working connection.
+
+## Step 4: the chat can list bills, payments, sales receipts and credit memos
+
+Step 1 synced these entities, but until now only their effect on the Profit and
+Loss figures reached the chat. Questions such as "which bills are overdue?" or
+"which invoices did that payment cover?" had no tool to answer them.
+
+| Tool | Lists | Scoping |
+|---|---|---|
+| `get_bills` | Supplier bills, with the balance still owed | Company-level: the whole company only |
+| `get_payments` | Customer payments, with the invoices each settled | The caller's clients |
+| `get_sales_receipts` | Sales paid on the spot | The caller's clients |
+| `get_credit_memos` | Credits issued, with the credit still available | The caller's clients |
+
+Each filters by period and by vendor or customer name, returns the most recent
+first, and carries `data_freshness` for the entities it reads.
+
+### Scoping notes
+
+- **Bills belong to no client.** A bill is owed by the company to a supplier, so
+  client scoping has nothing to narrow it by. Only a caller who sees the whole
+  company (an admin, or a user tracking all clients) may list bills. A user
+  limited to specific clients gets `company_level_data`, and one whose scope has
+  not resolved gets `client_access_pending`. Neither gets any bill data.
+- **A payment's invoices go through the same client scope.** Invoice numbers are
+  looked up through the scoped invoice query, so a payment cannot reveal another
+  client's invoice, even if QuickBooks linked one to it.
+- **Payments read invoices too,** so their freshness covers both: an invoices
+  sync in progress qualifies a payments answer.
+
+### Known limitations
+
+- **Bill and invoice status is worked out when the record syncs.** A bill that
+  falls due between syncs still shows as Open until the next sync marks it
+  Overdue.
+- **The name filters match loosely** (`vendor`, `customer`): "lumber" matches
+  every vendor with that word in its name.
+
+### Deploying
+
+No migrations and no queue restart: the tools run inside chat requests.
+
+### Verified
+
+- **134 tests pass** (494 assertions), including `QuickBooksAiEntityListToolsTest`.
+- **Mutation checks.** Each deliberate break makes its test fail, 8 of 8:
+
+  | Deliberate break | Result |
+  |---|---|
+  | Bills shown to client-scoped users | caught |
+  | Company-level helper lets client-scoped users through | caught |
+  | Payments not scoped to the caller | caught |
+  | Linked invoice numbers not scoped | caught |
+  | Payments ignore an invoices sync in progress | caught |
+  | Sales receipts not scoped to the caller | caught |
+  | Remaining credit summed from the wrong column | caught |
+  | A list tool left unregistered | caught |
+
+  One test assertion had compared a list with itself and so could never fail. It
+  now checks what it was meant to: that a payments answer reports an invoices
+  sync still in progress.
+- **Live, against the sandbox realm:**
+
+  | | Client-scoped user | Whole company | Synced totals |
+  |---|---|---|---|
+  | Bills | refused, `company_level_data` | 15, owed 1,602.67, 5 overdue | 15, 1,602.67, 5 |
+  | Payments | 4, received 433.00, only her own | 16, received 4,752.62 | 16, 4,752.62 |
+  | Sales receipts | 0 | 4, total 781.25 | 4, 781.25 |
+  | Credit memos | 1, credited 100.00 | 1, credited 100.00, 0.00 left | 1, 100.00, 0.00 |
+
+  Every company payment listed the invoices it settled, resolving to 14 distinct
+  invoice numbers, the same 14 links found when the entities were first synced.

@@ -66,6 +66,18 @@ class QuickBooksClientScope
     }
 
     /**
+     * Whether the context may see company-level data that belongs to no client,
+     * such as supplier bills: an admin, or a user tracking all clients. A user
+     * limited to specific clients, or whose scope has not resolved, may not.
+     */
+    public static function contextSeesWholeCompany(QuickBooksAiContext $context): bool
+    {
+        $scope = self::scopeOfContext($context);
+
+        return ($scope['resolved'] || $scope['is_admin']) && ! $scope['specific'];
+    }
+
+    /**
      * The customers a QuickBooks report must be filtered to, for the same scope
      * the query filters apply.
      *
