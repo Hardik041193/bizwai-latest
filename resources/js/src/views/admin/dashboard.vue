@@ -89,21 +89,106 @@
                 </div>
             </div>
 
+            <!-- ── Charts: User growth trend + Platform Health Score ── -->
+            <div class="mb-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
+
+                <!-- User Growth Trend -->
+                <div class="panel h-full rounded-xl xl:col-span-2">
+                    <div class="mb-5 flex items-center justify-between">
+                        <h5 class="text-lg font-semibold text-dark dark:text-white-light">
+                            User Growth Trend
+                        </h5>
+                        <span class="text-xs text-white-dark">Last {{ dashStore.charts?.months ?? 12 }} months</span>
+                    </div>
+
+                    <div v-if="dashStore.chartsLoading"
+                        class="h-[325px] animate-pulse rounded-lg bg-gray-200 dark:bg-gray-700"></div>
+
+                    <div v-else-if="dashStore.chartsError"
+                        class="flex h-[325px] flex-col items-center justify-center gap-3 text-sm text-danger">
+                        {{ dashStore.chartsError }}
+                        <button @click="dashStore.fetchCharts()"
+                            class="text-xs underline hover:no-underline font-medium">
+                            Retry
+                        </button>
+                    </div>
+
+                    <apexchart v-else height="325" :options="growthChart" :series="growthSeries"
+                        class="overflow-hidden rounded-lg bg-white dark:bg-black"></apexchart>
+                </div>
+
+                <!-- Platform Health Score -->
+                <div class="panel h-full rounded-xl">
+                    <div class="mb-5 flex items-center justify-between">
+                        <h5 class="text-lg font-semibold text-dark dark:text-white-light">
+                            Platform Health Score
+                        </h5>
+                    </div>
+
+                    <div v-if="dashStore.chartsLoading"
+                        class="h-[325px] animate-pulse rounded-lg bg-gray-200 dark:bg-gray-700"></div>
+
+                    <div v-else-if="dashStore.chartsError"
+                        class="flex h-[325px] items-center justify-center text-sm text-danger">
+                        Score unavailable
+                    </div>
+
+                    <template v-else>
+                        <apexchart height="325" :options="healthChart" :series="healthSeries"
+                            class="overflow-hidden rounded-lg bg-white dark:bg-black"></apexchart>
+
+                        <div class="grid grid-cols-3 gap-2 text-center">
+                            <div v-for="part in healthBreakdown" :key="part.label">
+                                <p class="text-base font-semibold text-dark dark:text-white">{{ part.value }}%</p>
+                                <p class="text-xs text-white-dark">{{ part.label }}</p>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- ── Quick Insights ── -->
+            <div class="panel mb-6 rounded-xl">
+                <h5 class="mb-5 text-lg font-semibold text-dark dark:text-white-light">Quick Insights</h5>
+
+                <div v-if="dashStore.chartsLoading" class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <div v-for="i in 4" :key="i" class="h-20 animate-pulse rounded-lg bg-gray-200 dark:bg-gray-700"></div>
+                </div>
+
+                <div v-else class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <div v-for="insight in quickInsights" :key="insight.label"
+                        class="flex items-center gap-3 rounded-lg bg-[#f6f8fa] px-4 py-3 dark:bg-[#1b2e4b]">
+                        <span class="h-2.5 w-2.5 shrink-0 rounded-full" :class="insight.dot"></span>
+                        <div>
+                            <p class="text-lg font-bold text-dark dark:text-white">{{ insight.value }}</p>
+                            <p class="text-xs text-white-dark">{{ insight.label }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
 </template>
 
 <script lang="ts" setup>
 import { computed, onMounted } from 'vue';
+import apexchart from 'vue3-apexcharts';
 import { useAdminDashboardStore } from '@/stores/adminDashboard';
+import { useAppStore } from '@/stores/index';
 import { useMeta } from '@/composables/use-meta';
 
 useMeta({ title: 'Admin Dashboard' });
 
 const dashStore = useAdminDashboardStore();
+const store     = useAppStore();
 
-// Fetch stats when page loads
-onMounted(() => dashStore.fetchStats());
+// Fetch stats and chart data when page loads
+onMounted(() => {
+    dashStore.fetchStats();
+    dashStore.fetchCharts();
+});
+
 
 // Build stat cards from live API data
 const statCards = computed(() => {
@@ -145,6 +230,144 @@ const statCards = computed(() => {
             iconColor: 'text-warning',
             iconPath:  'M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z',
         },
+    ];
+});
+
+// ── User Growth Trend ──
+const growthSeries = computed(() => {
+    const trend = dashStore.charts?.user_growth;
+    return [
+        { name: 'Signups', data: trend?.signups ?? [] },
+        { name: 'QBO Connections', data: trend?.connections ?? [] },
+    ];
+});
+
+const growthChart = computed(() => {
+    const isDark = store.theme === 'dark' || store.isDarkMode ? true : false;
+    const isRtl = store.rtlClass === 'rtl' ? true : false;
+
+    return {
+        chart: {
+            height: 325,
+            type: 'area',
+            fontFamily: 'Nunito, sans-serif',
+            zoom: { enabled: false },
+            toolbar: { show: false },
+        },
+        dataLabels: { enabled: false },
+        stroke: { show: true, curve: 'smooth', width: 2, lineCap: 'square' },
+        colors: isDark ? ['#2196f3', '#00ab55'] : ['#4361ee', '#00ab55'],
+        labels: dashStore.charts?.user_growth.labels ?? [],
+        xaxis: {
+            axisBorder: { show: false },
+            axisTicks: { show: false },
+            crosshairs: { show: true },
+            labels: {
+                offsetX: isRtl ? 2 : 0,
+                offsetY: 5,
+                style: { fontSize: '12px', cssClass: 'apexcharts-xaxis-title' },
+            },
+        },
+        yaxis: {
+            tickAmount: 5,
+            min: 0,
+            forceNiceScale: true,
+            labels: {
+                formatter: (value: number) => `${Math.round(value)}`,
+                offsetX: isRtl ? -30 : -10,
+                style: { fontSize: '12px', cssClass: 'apexcharts-yaxis-title' },
+            },
+            opposite: isRtl ? true : false,
+        },
+        grid: {
+            borderColor: isDark ? '#191e3a' : '#e0e6ed',
+            strokeDashArray: 5,
+            xaxis: { lines: { show: true } },
+            yaxis: { lines: { show: false } },
+        },
+        legend: {
+            position: 'top',
+            horizontalAlign: 'right',
+            fontSize: '14px',
+            markers: { width: 10, height: 10, offsetX: -2 },
+            itemMargin: { horizontal: 10, vertical: 5 },
+        },
+        tooltip: {
+            marker: { show: true },
+            y: { formatter: (value: number) => `${Math.round(value)} users` },
+        },
+        fill: {
+            type: 'gradient',
+            gradient: {
+                shadeIntensity: 1,
+                inverseColors: false,
+                opacityFrom: isDark ? 0.19 : 0.28,
+                opacityTo: 0.05,
+                stops: isDark ? [100, 100] : [45, 100],
+            },
+        },
+    };
+});
+
+// ── Platform Health Score ──
+const healthSeries = computed(() => [dashStore.charts?.health_score.score ?? 0]);
+
+const healthChart = computed(() => {
+    const isDark = store.theme === 'dark' || store.isDarkMode ? true : false;
+    const label = dashStore.charts?.health_score.label ?? 'Health Score';
+
+    return {
+        chart: {
+            height: 325,
+            type: 'radialBar',
+            fontFamily: 'Nunito, sans-serif',
+            toolbar: { show: false },
+        },
+        colors: ['#4361ee'],
+        plotOptions: {
+            radialBar: {
+                hollow: { size: '62%' },
+                track: { background: isDark ? '#191e3a' : '#e0e6ed', strokeWidth: '100%' },
+                dataLabels: {
+                    name: {
+                        offsetY: 28,
+                        fontSize: '13px',
+                        color: isDark ? '#888ea8' : '#888ea8',
+                    },
+                    value: {
+                        offsetY: -12,
+                        fontSize: '34px',
+                        fontWeight: 700,
+                        color: isDark ? '#e0e6ed' : '#0e1726',
+                        formatter: (value: number) => `${Math.round(value)}`,
+                    },
+                },
+            },
+        },
+        labels: [label],
+        stroke: { lineCap: 'round' },
+        fill: { opacity: 0.9 },
+    };
+});
+
+// Score contributors, shown under the radial chart
+const healthBreakdown = computed(() => {
+    const parts = dashStore.charts?.health_score.breakdown;
+    return [
+        { label: 'QBO Adoption', value: parts?.adoption ?? 0 },
+        { label: 'Verified', value: parts?.verification ?? 0 },
+        { label: 'Sync Fresh', value: parts?.freshness ?? 0 },
+    ];
+});
+
+// ── Quick Insights rail ──
+const quickInsights = computed(() => {
+    const i = dashStore.charts?.quick_insights;
+    return [
+        { label: 'New Users (30d)', value: String(i?.new_users_30d ?? 0), dot: 'bg-success' },
+        { label: 'Unread Messages', value: String(i?.unread_messages ?? 0), dot: 'bg-info' },
+        { label: 'Connected Companies', value: String(i?.connected_companies ?? 0), dot: 'bg-primary' },
+        { label: 'Stale Syncs', value: String(i?.stale_syncs ?? 0), dot: 'bg-warning' },
     ];
 });
 </script>
