@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\QuickBooksSyncState;
 use App\Models\QuickBooksToken;
 use App\Services\QuickBooksService;
 use Illuminate\Bus\Queueable;
@@ -9,67 +10,122 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Log;
-use RuntimeException;
 
+/**
+ * Start a full sync of a QuickBooks realm.
+ *
+ * Makes no QuickBooks calls itself. It fans the sync out into a batch: a
+ * SyncQuickBooksEntityJob for each single step, then either one
+ * SyncQuickBooksChangesJob, when every data entity is inside the change data
+ * capture window, or a paged SyncQuickBooksEntityJob per data entity. Every
+ * entry point (the Sync button, the OAuth callback, the scheduler) still
+ * dispatches this job, so none of them needed to change.
+ */
 class SyncQuickBooksDataJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    /**
-     * Number of times the job may be attempted.
-     */
     public int $tries = 3;
 
     /**
-     * Seconds to wait before retrying on failure.
-     *
      * @var array<int>
      */
-    public array $backoff = [60, 300, 900];
+    public array $backoff = [10, 60, 300];
 
     /**
-     * Maximum seconds the job may run.
+     * Only writes state rows and a batch.
      */
-    public int $timeout = 120;
+    public int $timeout = 60;
 
+    // Private, as it was before R2. Jobs already waiting in the queue were
+    // serialized with a private property, and changing its visibility risks them
+    // failing to unserialize after a deploy. Read it through tokenId().
     public function __construct(private readonly int $tokenId)
     {
         $this->onQueue('quickbooks');
     }
 
-    public function handle(QuickBooksService $service): void
+    public function tokenId(): int
+    {
+        return $this->tokenId;
+    }
+
+    public function handle(): void
     {
         $token = QuickBooksToken::find($this->tokenId);
 
         if (! $token) {
             Log::warning("SyncQuickBooksDataJob: token #{$this->tokenId} not found — skipping.");
+
             return;
         }
 
-        Log::info("QuickBooks sync started for realm {$token->realm_id} (user {$token->user_id}).");
+        $realmId = $token->realm_id;
 
-        try {
-            $counts = $service->syncAll($token);
+        Log::info("QuickBooks sync started for realm {$realmId} (user {$token->user_id}).");
 
-            Log::info('QuickBooks sync completed.', array_merge(['realm_id' => $token->realm_id], $counts));
-        } catch (RuntimeException $e) {
-            Log::error('QuickBooks sync failed.', [
-                'realm_id' => $token->realm_id,
-                'error'    => $e->getMessage(),
-            ]);
+        // The controller seeds these rows before dispatching so the frontend's
+        // first poll sees work in progress, but a sync started from the console
+        // command or the scheduler has no such seed. Seeding again here is
+        // harmless (updateOrCreate) and keeps every entry point consistent.
+        QuickBooksSyncState::markQueued($realmId);
 
-            throw $e;
+        $steps = array_map(
+            fn (string $entity) => new SyncQuickBooksEntityJob($token->id, $entity),
+            array_values(array_diff(QuickBooksSyncState::ENTITIES, QuickBooksService::PAGED_ENTITIES))
+        );
+
+        // Every data entity completed a run inside QuickBooks' change data
+        // capture window: one change request replaces a full paged query per
+        // entity, and also picks up deletions. Otherwise sync in full.
+        $since = QuickBooksSyncState::changesSince(
+            $realmId, QuickBooksService::PAGED_ENTITIES, QuickBooksService::CDC_MAX_AGE_DAYS
+        );
+
+        if ($since !== null) {
+            $steps[] = new SyncQuickBooksChangesJob($token->id, $since->toIso8601String());
+        } else {
+            foreach (QuickBooksService::PAGED_ENTITIES as $entity) {
+                $steps[] = new SyncQuickBooksEntityJob($token->id, $entity);
+            }
         }
+
+        Bus::batch($steps)
+            ->name("quickbooks-sync:{$realmId}")
+            // One failing step must not stop the rest: a bad invoices page should
+            // not deny the user their accounts and customers.
+            ->allowFailures()
+            ->onQueue('quickbooks')
+            ->finally(function () use ($realmId) {
+                // Safety net. Each step records its own outcome, but a cancelled
+                // batch skips steps and a lost job never reports back. Whatever
+                // is still unfinished once the batch has settled never will be,
+                // and leaving it would hold the progress screen open.
+                QuickBooksSyncState::failUnfinished($realmId, 'This step did not run to completion.');
+
+                Log::info('QuickBooks sync finished.', ['realm_id' => $realmId] + array_intersect_key(
+                    QuickBooksSyncState::progressFor($realmId),
+                    array_flip(['status', 'entities_failed'])
+                ));
+            })
+            ->dispatch();
     }
 
     /**
-     * Handle a job failure after all retries are exhausted.
+     * The batch was never dispatched, so no step will ever report.
      */
     public function failed(\Throwable $exception): void
     {
         Log::error("SyncQuickBooksDataJob permanently failed for token #{$this->tokenId}.", [
             'error' => $exception->getMessage(),
         ]);
+
+        $token = QuickBooksToken::find($this->tokenId);
+
+        if ($token) {
+            QuickBooksSyncState::failUnfinished($token->realm_id, $exception->getMessage());
+        }
     }
 }

@@ -19,6 +19,10 @@ final class QuickBooksAiContext
         public readonly bool $hasAllClients,
         public readonly array $selectedClientQboIds,
         public readonly array $selectedClientNames,
+        // False until the user's client match has resolved. Scoping denies a
+        // non-admin everything while it is false, so it defaults to false for
+        // any caller that does not know.
+        public readonly bool $scopeResolved = false,
     ) {}
 
     public static function forUser(User $user): self
@@ -33,6 +37,7 @@ final class QuickBooksAiContext
                 hasAllClients: false,
                 selectedClientQboIds: [],
                 selectedClientNames: [],
+                scopeResolved: false,
             );
         }
 
@@ -43,6 +48,7 @@ final class QuickBooksAiContext
             hasAllClients: $token->isAllClientsSelected(),
             selectedClientQboIds: $token->selectedClientQboIds(),
             selectedClientNames: $token->selectedClientNames(),
+            scopeResolved: $token->hasCompletedClientSelection(),
         );
     }
 

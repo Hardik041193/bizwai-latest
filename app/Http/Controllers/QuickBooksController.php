@@ -2,18 +2,21 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\QuickBooksReauthorizationRequired;
 use App\Jobs\SyncQuickBooksDataJob;
 use App\Models\QuickBooksAccount;
 use App\Models\QuickBooksCustomer;
 use App\Models\QuickBooksInvoice;
+use App\Models\QuickBooksSyncState;
 use App\Models\QuickBooksToken;
 use App\Models\QuickBooksTransaction;
-use App\Models\User;
+use App\Services\QuickBooksReports;
 use App\Services\QuickBooksService;
 use App\Support\QuickBooksClientScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -88,30 +91,19 @@ class QuickBooksController extends Controller
             return redirect("{$frontendBase}/quickbooks/error?message={$message}");
         }
 
-        // Sync only the lightweight company info here (one quick API call) and
-        // resolve which clients this user tracks. The full data sync
-        // (invoices/customers/transactions) is intentionally NOT run inline: it
-        // is heavy (~10-15s) and would make the post-OAuth redirect hang on a
-        // blank page. The frontend kicks it off right after landing on
-        // /quickbooks/connected, with a visible "syncing" state.
-        try {
-            $token = QuickBooksToken::where('user_id', $userId)->first();
-            if ($token) {
-                $this->quickBooks->syncCompanyInfo($token);
+        // Nothing else runs inline. Company info and client matching used to be
+        // called here, but they are QuickBooks API calls sitting inside Intuit's
+        // browser redirect, before any page of ours has loaded, so there is no
+        // spinner that can cover them. Client matching in particular queried up
+        // to 1000 customers. Both are now tracked entities of the background
+        // sync, behind the progress bar on /quickbooks/connected.
+        $token = QuickBooksToken::where('user_id', $userId)->first();
 
-                // Complete the selection step automatically: a user whose login
-                // email belongs to a customer of this company is scoped to that
-                // customer, everyone else tracks all clients (empty list).
-                if (! $token->hasCompletedClientSelection()) {
-                    $this->quickBooks->selectClients($token, $this->matchClientsForUser($token, $userId));
-                    $token->refresh();
-                }
-            }
-        } catch (\Throwable $e) {
-            Log::warning('QuickBooks company info sync after connect (non-fatal).', [
-                'user_id' => $userId,
-                'error' => $e->getMessage(),
-            ]);
+        if ($token) {
+            // Dispatched here rather than by the frontend so that closing the
+            // tab during the redirect no longer skips the sync entirely.
+            QuickBooksSyncState::markQueued($token->realm_id);
+            dispatch(new SyncQuickBooksDataJob($token->id));
         }
 
         return redirect("{$frontendBase}/quickbooks/connected");
@@ -269,9 +261,50 @@ class QuickBooksController extends Controller
             return response()->json(['message' => 'QuickBooks account is not connected.'], 422);
         }
 
+        // A run is already in flight: report it rather than start another.
+        // Overlapping runs are data-safe (every write is an upsert) but they
+        // double the metered QuickBooks read calls for nothing.
+        if (QuickBooksSyncState::isInProgress($token->realm_id)) {
+            return response()->json([
+                'message' => 'A sync is already running.',
+                'progress' => QuickBooksSyncState::progressFor($token->realm_id),
+            ]);
+        }
+
+        // Seed the state rows here, in the request, not in the job. The job may
+        // not be picked up by a worker for a second or two, and in that gap the
+        // frontend's first progress poll would otherwise read the previous
+        // run's "complete" rows and clear its spinner on a sync that has not
+        // begun.
+        QuickBooksSyncState::markQueued($token->realm_id);
+
         dispatch(new SyncQuickBooksDataJob($token->id));
 
-        return response()->json(['message' => 'Sync has been queued successfully.']);
+        return response()->json([
+            'message' => 'Sync has been queued successfully.',
+            'progress' => QuickBooksSyncState::progressFor($token->realm_id),
+        ]);
+    }
+
+    /**
+     * Per-entity sync progress for the authenticated user's realm.
+     *
+     * Polled by the frontend while a sync runs. Cheap by design (one indexed
+     * read of at most one row per entity) because it is hit every couple of
+     * seconds during onboarding.
+     */
+    public function syncProgress(Request $request): JsonResponse
+    {
+        $token = $request->user()->quickBooksToken;
+
+        if (! $token) {
+            return response()->json(['message' => 'QuickBooks is not connected.'], 422);
+        }
+
+        return response()->json(array_merge(
+            ['realm_id' => $token->realm_id],
+            QuickBooksSyncState::progressFor($token->realm_id)
+        ));
     }
 
     /**
@@ -289,6 +322,38 @@ class QuickBooksController extends Controller
     // ──────────────────────────────────────────────────────────────────────
 
     /**
+     * Profit and loss to date for the token's scope, or why it is missing.
+     *
+     * A failed report must not take the dashboard down: the caller still returns
+     * the rest of the summary, and the reason says why these figures are absent.
+     *
+     * @return array{0: array<string, mixed>|null, 1: string|null}
+     */
+    private function profitAndLossToDate(QuickBooksToken $token): array
+    {
+        $customers = QuickBooksClientScope::reportCustomersForToken($token);
+
+        if ($customers === null) {
+            return [null, 'client_access_pending'];
+        }
+
+        try {
+            return [app(QuickBooksReports::class)->profitAndLoss(
+                $token, Carbon::parse(QuickBooksReports::ALL_TIME_START), Carbon::now(), $customers
+            ), null];
+        } catch (QuickBooksReauthorizationRequired $e) {
+            return [null, 'quickbooks_reconnect_required'];
+        } catch (RuntimeException $e) {
+            Log::warning('QuickBooks report unavailable for the dashboard summary.', [
+                'realm_id' => $token->realm_id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [null, 'quickbooks_report_unavailable'];
+        }
+    }
+
+    /**
      * Resolve the QuickBooks realm token relevant to the current user.
      *
      * Every role resolves to its own connected QuickBooks token.
@@ -296,44 +361,6 @@ class QuickBooksController extends Controller
     private function resolveToken(Request $request): ?QuickBooksToken
     {
         return $request->user()->quickBooksToken;
-    }
-
-    /**
-     * Clients to track for a freshly connected user.
-     *
-     * A non-admin who signs in with an email that belongs to a customer of the
-     * connected company is scoped to that customer's records. Admins, and users
-     * whose email matches nothing, track all clients (an empty list), which is
-     * the behaviour every connection had before matching existed.
-     *
-     * @return array<int, array{qbo_id: string, name: string}>
-     */
-    private function matchClientsForUser(QuickBooksToken $token, int $userId): array
-    {
-        $user = User::find($userId);
-
-        if (! $user || $user->isAdmin() || empty($user->email)) {
-            return [];
-        }
-
-        try {
-            $matches = $this->quickBooks->findCustomersByEmail($token, $user->email);
-        } catch (\Throwable $e) {
-            Log::warning('QuickBooks client match by email failed; tracking all clients.', [
-                'user_id' => $userId,
-                'error' => $e->getMessage(),
-            ]);
-
-            return [];
-        }
-
-        if ($matches === []) {
-            Log::info('QuickBooks connect: no customer matched the user email; tracking all clients.', [
-                'user_id' => $userId,
-            ]);
-        }
-
-        return $matches;
     }
 
     private function applySelectedClientToInvoices($query, QuickBooksToken $token): void
@@ -504,22 +531,26 @@ class QuickBooksController extends Controller
         $invoiceQuery = QuickBooksInvoice::where('realm_id', $realmId);
         $this->applySelectedClientToInvoices($invoiceQuery, $token);
 
-        $txnQuery = QuickBooksTransaction::where('realm_id', $realmId);
-        $this->applySelectedClientToTransactions($txnQuery, $token);
-
         $customerCountQuery = QuickBooksCustomer::where('realm_id', $realmId);
         $this->applySelectedClientToCustomers($customerCountQuery, $token);
 
-        $totalRevenue = (clone $invoiceQuery)->where('status', 'Paid')->sum('total_amount');
         $outstandingBalance = (clone $invoiceQuery)->whereIn('status', ['Open', 'Overdue'])->sum('balance');
-        $totalExpenses = (clone $txnQuery)->sum('amount');
         $overdueCount = (clone $invoiceQuery)->where('status', 'Overdue')->count();
         $invoiceTotal = (clone $invoiceQuery)->sum('total_amount');
 
+        // Revenue and expenses come from QuickBooks' own Profit and Loss report
+        // on the company's accounting basis. They used to be paid invoices and
+        // cash purchases, which on the sandbox realm put revenue at under half
+        // of what QuickBooks reports.
+        [$figures, $figuresError] = $this->profitAndLossToDate($token);
+
         return response()->json([
-            'total_revenue' => (float) $totalRevenue,
+            'total_revenue' => $figures['revenue'] ?? null,
             'outstanding_balance' => (float) $outstandingBalance,
-            'total_expenses' => (float) $totalExpenses,
+            'total_expenses' => $figures['total_expenses'] ?? null,
+            'net_income' => $figures['net_income'] ?? null,
+            'accounting_basis' => $figures['basis'] ?? null,
+            'figures_error' => $figuresError,
             'overdue_invoices' => $overdueCount,
             'total_invoices' => (clone $invoiceQuery)->count(),
             'total_customers' => (clone $customerCountQuery)->count(),

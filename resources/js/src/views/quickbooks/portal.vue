@@ -278,9 +278,17 @@ watch(activeTab, async () => {
 
 async function syncData() {
     try {
+        // Resolves on completion now, so the previous fixed 2s delay before
+        // reloading is gone; reload once the data is genuinely there.
         await qbStore.triggerSync();
-        showToast('QuickBooks sync queued successfully.', 'success');
-        setTimeout(loadDashboard, 2000);
+
+        if (qbStore.syncHadFailures || qbStore.error) {
+            showToast(qbStore.error ?? 'Sync finished, but some data could not be imported.', 'warning');
+        } else {
+            showToast('QuickBooks data refreshed.', 'success');
+        }
+
+        await loadDashboard();
     } catch {
         showToast(qbStore.error ?? 'Failed to refresh QuickBooks data.', 'error');
     }

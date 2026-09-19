@@ -4,12 +4,13 @@ namespace App\Services\Ai\Tools;
 
 use App\Models\QuickBooksCustomer;
 use App\Services\Ai\QuickBooksAiContext;
+use App\Services\Ai\Tools\Concerns\ReportsDataFreshness;
 use App\Services\Ai\Tools\Concerns\ScopesToSelectedClients;
 use App\Services\Ai\Tools\Contracts\AiTool;
 
 class GetCustomers implements AiTool
 {
-    use ScopesToSelectedClients;
+    use ReportsDataFreshness, ScopesToSelectedClients;
 
     public function name(): string
     {
@@ -73,9 +74,9 @@ class GetCustomers implements AiTool
             ])
             ->all();
 
-        return [
+        return $this->withDataFreshness([
             'customers' => $customers,
             'total_count' => $totalCount,
-        ];
+        ], $context, ['customers']);
     }
 }

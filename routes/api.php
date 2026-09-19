@@ -81,6 +81,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/disconnect', [QuickBooksController::class, 'disconnect'])->name('disconnect')->middleware('throttle:10,1');
         Route::post('/sync', [QuickBooksController::class, 'sync'])->name('sync')->middleware('throttle:10,1');
 
+        // Polled every couple of seconds while a sync runs, so it needs a
+        // far looser throttle than the sync trigger itself.
+        Route::get('/sync/progress', [QuickBooksController::class, 'syncProgress'])
+            ->name('sync.progress')
+            ->middleware('throttle:120,1');
+
         Route::get('/selection/clients', [QuickBooksController::class, 'selectionClients'])->name('selection.clients');
         Route::post('/selection/client', [QuickBooksController::class, 'saveClientSelection'])->name('selection.save');
         Route::delete('/selection/client', [QuickBooksController::class, 'clearClientSelection'])->name('selection.clear');

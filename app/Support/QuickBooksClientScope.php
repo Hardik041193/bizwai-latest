@@ -3,14 +3,22 @@
 namespace App\Support;
 
 use App\Models\QuickBooksToken;
+use App\Services\Ai\QuickBooksAiContext;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * Shared "selected client" scoping logic used by QuickBooksController and the
- * AI chat tools, so the two never drift apart.
+ * Selected-client scoping for synced QuickBooks data. The one implementation:
+ * QuickBooksController reaches it through a token, the AI tools through
+ * QuickBooksAiContext.
  *
- * Filters by customer_qbo_id (rename-proof) OR falls back to matching the
- * legacy name column(s), for rows synced before customer_qbo_id existed.
+ * There used to be two copies, this one and one in the AI tools' trait, each
+ * marked "do not let the two drift". They drifted. R1b made this copy fail
+ * closed, but the AI copy still failed open, so a non-admin whose client match
+ * had not resolved could read the whole company's data through the chat. Both
+ * callers now reach the same code, so they cannot disagree again.
+ *
+ * Filters by customer_qbo_id (rename-proof), falling back to the legacy name
+ * column(s) for rows synced before customer_qbo_id existed.
  */
 class QuickBooksClientScope
 {
@@ -25,17 +33,7 @@ class QuickBooksClientScope
         string $qboIdColumn,
         string $nameColumn
     ): void {
-        if (! $token->hasSelectedClient()) {
-            return;
-        }
-
-        $qboIds = $token->selectedClientQboIds();
-        $names = $token->selectedClientNames();
-
-        $query->where(function (Builder $q) use ($qboIds, $names, $qboIdColumn, $nameColumn) {
-            $q->whereIn($qboIdColumn, $qboIds)
-                ->orWhereIn($nameColumn, $names);
-        });
+        self::apply($query, self::scopeOfToken($token), $qboIdColumn, [$nameColumn]);
     }
 
     /**
@@ -50,17 +48,131 @@ class QuickBooksClientScope
         string $nameColumnA,
         string $nameColumnB
     ): void {
-        if (! $token->hasSelectedClient()) {
+        self::apply($query, self::scopeOfToken($token), $qboIdColumn, [$nameColumnA, $nameColumnB]);
+    }
+
+    /**
+     * The same filter for the AI tools, which only ever receive a context.
+     *
+     * @param  array<int, string>  $nameColumns
+     */
+    public static function applyForContext(
+        Builder $query,
+        QuickBooksAiContext $context,
+        string $qboIdColumn,
+        array $nameColumns
+    ): void {
+        self::apply($query, self::scopeOfContext($context), $qboIdColumn, $nameColumns);
+    }
+
+    /**
+     * Whether the context may see company-level data that belongs to no client,
+     * such as supplier bills: an admin, or a user tracking all clients. A user
+     * limited to specific clients, or whose scope has not resolved, may not.
+     */
+    public static function contextSeesWholeCompany(QuickBooksAiContext $context): bool
+    {
+        $scope = self::scopeOfContext($context);
+
+        return ($scope['resolved'] || $scope['is_admin']) && ! $scope['specific'];
+    }
+
+    /**
+     * The customers a QuickBooks report must be filtered to, for the same scope
+     * the query filters apply.
+     *
+     * Reports can only be filtered by customer id. A caller whose scope has not
+     * resolved, or whose selection carries no ids to filter by, gets null and
+     * must be shown nothing, never the whole company.
+     *
+     * @return array<int, string>|null  null: nothing; []: the whole company; otherwise these customer ids
+     */
+    public static function reportCustomersForContext(QuickBooksAiContext $context): ?array
+    {
+        return self::reportCustomers(self::scopeOfContext($context));
+    }
+
+    /**
+     * @return array<int, string>|null  null: nothing; []: the whole company; otherwise these customer ids
+     */
+    public static function reportCustomersForToken(QuickBooksToken $token): ?array
+    {
+        return self::reportCustomers(self::scopeOfToken($token));
+    }
+
+    /**
+     * @param  array{is_admin: bool, resolved: bool, specific: bool, qbo_ids: array<int, string>, names: array<int, string>}  $scope
+     * @return array<int, string>|null
+     */
+    private static function reportCustomers(array $scope): ?array
+    {
+        if (! $scope['resolved'] && ! $scope['is_admin']) {
+            return null;
+        }
+
+        if (! $scope['specific']) {
+            return [];
+        }
+
+        return $scope['qbo_ids'] === [] ? null : array_values($scope['qbo_ids']);
+    }
+
+    /**
+     * @return array{is_admin: bool, resolved: bool, specific: bool, qbo_ids: array<int, string>, names: array<int, string>}
+     */
+    private static function scopeOfContext(QuickBooksAiContext $context): array
+    {
+        return [
+            'is_admin' => $context->isAdmin,
+            'resolved' => $context->scopeResolved,
+            'specific' => $context->scopeResolved && ! $context->hasAllClients,
+            'qbo_ids' => $context->selectedClientQboIds,
+            'names' => $context->selectedClientNames,
+        ];
+    }
+
+    /**
+     * @return array{is_admin: bool, resolved: bool, specific: bool, qbo_ids: array<int, string>, names: array<int, string>}
+     */
+    private static function scopeOfToken(QuickBooksToken $token): array
+    {
+        return [
+            'is_admin' => $token->user?->isAdmin() ?? false,
+            'resolved' => $token->hasCompletedClientSelection(),
+            'specific' => $token->hasSelectedClient(),
+            'qbo_ids' => $token->selectedClientQboIds(),
+            'names' => $token->selectedClientNames(),
+        ];
+    }
+
+    /**
+     * @param  array{is_admin: bool, resolved: bool, specific: bool, qbo_ids: array<int, string>, names: array<int, string>}  $scope
+     * @param  array<int, string>  $nameColumns
+     */
+    private static function apply(Builder $query, array $scope, string $qboIdColumn, array $nameColumns): void
+    {
+        // Client matching runs as part of the background sync, so between
+        // connecting and that step completing there is no selection at all.
+        // Returning "no filter" in that window would hand a client-scoped user
+        // the whole company's financials, so non-admins see nothing until their
+        // scope is known. Admins are unscoped by design.
+        if (! $scope['resolved'] && ! $scope['is_admin']) {
+            $query->whereRaw('1 = 0');
+
             return;
         }
 
-        $qboIds = $token->selectedClientQboIds();
-        $names = $token->selectedClientNames();
+        // All clients, or an admin whose scope has not resolved.
+        if (! $scope['specific']) {
+            return;
+        }
 
-        $query->where(function (Builder $q) use ($qboIds, $names, $qboIdColumn, $nameColumnA, $nameColumnB) {
-            $q->whereIn($qboIdColumn, $qboIds)
-                ->orWhereIn($nameColumnA, $names)
-                ->orWhereIn($nameColumnB, $names);
+        $query->where(function (Builder $q) use ($scope, $qboIdColumn, $nameColumns) {
+            $q->whereIn($qboIdColumn, $scope['qbo_ids']);
+
+            foreach ($nameColumns as $nameColumn) {
+                $q->orWhereIn($nameColumn, $scope['names']);
+            }
         });
     }
 }

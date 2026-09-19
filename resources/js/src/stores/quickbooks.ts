@@ -32,10 +32,41 @@ export interface QBStatus {
     last_synced_at?: string | null;
 }
 
+export type QBSyncEntityStatus = 'idle' | 'pending' | 'syncing' | 'complete' | 'failed';
+
+export interface QBSyncEntity {
+    entity: string;
+    label: string;
+    status: QBSyncEntityStatus;
+    records_synced: number;
+    last_synced_at: string | null;
+    error: string | null;
+}
+
+export interface QBSyncProgress {
+    realm_id?: string;
+    entities: QBSyncEntity[];
+    /** idle = never synced, partial = finished with at least one failure. */
+    status: 'idle' | 'syncing' | 'partial' | 'complete';
+    complete: boolean;
+    progress: number;
+    entities_total: number;
+    entities_finished: number;
+    entities_failed: number;
+    pending_entities: string[];
+    last_synced_at: string | null;
+}
+
 export interface QBSummary {
-    total_revenue: number;
+    /** From QuickBooks' Profit and Loss report; null when it could not be loaded. */
+    total_revenue: number | null;
     outstanding_balance: number;
-    total_expenses: number;
+    total_expenses: number | null;
+    net_income?: number | null;
+    /** The company's QuickBooks report basis the figures are on, e.g. "Accrual". */
+    accounting_basis?: string | null;
+    /** Why total_revenue and total_expenses are null, when they are. */
+    figures_error?: 'client_access_pending' | 'quickbooks_reconnect_required' | 'quickbooks_report_unavailable' | null;
     overdue_invoices: number;
     total_invoices: number;
     total_customers: number;
@@ -120,6 +151,7 @@ interface QBState {
     transactions: Paginated<QBTransaction> | null;
     loading: boolean;
     syncing: boolean;
+    syncProgress: QBSyncProgress | null;
     error: string | null;
 }
 
@@ -136,6 +168,7 @@ export const useQuickBooksStore = defineStore('quickbooks', {
         transactions: null,
         loading: false,
         syncing: false,
+        syncProgress: null,
         error: null,
     }),
 
@@ -147,6 +180,18 @@ export const useQuickBooksStore = defineStore('quickbooks', {
         // needsClientSelection: (state): boolean =>
         //     state.status?.connected === true && state.status?.needs_client_selection === true,
         needsClientSelection: (): boolean => false,
+
+        /** 0-100. Drives the onboarding progress bar. */
+        syncPercent: (state): number => state.syncProgress?.progress ?? 0,
+
+        /** Entities still importing, for "Invoices ✓, Expenses importing…" copy. */
+        syncPendingLabels: (state): string[] =>
+            (state.syncProgress?.entities ?? [])
+                .filter(e => e.status === 'pending' || e.status === 'syncing')
+                .map(e => e.label),
+
+        /** True when the last sync finished but some entities failed. */
+        syncHadFailures: (state): boolean => (state.syncProgress?.entities_failed ?? 0) > 0,
     },
 
     actions: {
@@ -265,17 +310,103 @@ export const useQuickBooksStore = defineStore('quickbooks', {
             }
         },
 
-        async triggerSync(): Promise<void> {
+        async fetchSyncProgress(): Promise<QBSyncProgress | null> {
+            try {
+                const { data } = await axios.get('/api/quickbooks/sync/progress');
+                this.syncProgress = data;
+                return data as QBSyncProgress;
+            } catch {
+                // A failed poll is not a failed sync; keep the last known
+                // progress and let the next tick try again.
+                return null;
+            }
+        },
+
+        /**
+         * Queue a sync and follow it to completion.
+         *
+         * The POST only queues work now that jobs run on a worker, so `syncing`
+         * cannot be cleared when it returns — that would show "done" over an
+         * empty dashboard. It stays true until the progress endpoint reports
+         * every entity finished.
+         */
+        async triggerSync(options: { poll?: boolean } = {}): Promise<void> {
+            const { poll = true } = options;
+
             this.syncing = true;
             this.error = null;
+
             try {
-                await axios.post('/api/quickbooks/sync');
+                const { data } = await axios.post('/api/quickbooks/sync');
+                if (data?.progress) {
+                    this.syncProgress = data.progress;
+                }
             } catch (err: any) {
+                this.syncing = false;
                 this.error = err.response?.data?.message ?? 'Sync failed.';
                 throw err;
+            }
+
+            if (! poll) {
+                return;
+            }
+
+            try {
+                await this.pollSyncProgress();
             } finally {
                 this.syncing = false;
             }
+        },
+
+        /**
+         * Follow a sync that is already running (the OAuth callback dispatches
+         * one server-side) without queueing another.
+         */
+        async followSync(): Promise<void> {
+            this.syncing = true;
+            this.error = null;
+
+            try {
+                await this.pollSyncProgress();
+            } finally {
+                this.syncing = false;
+            }
+        },
+
+        /**
+         * Poll until the sync finishes, or until the ceiling is hit.
+         *
+         * The ceiling exists so a worker that is not running, or one that died
+         * without reaching the job's failed() handler, cannot leave the UI
+         * spinning forever. Hitting it surfaces a message naming the likely
+         * cause rather than failing silently.
+         */
+        async pollSyncProgress(intervalMs = 2000, maxMs = 10 * 60 * 1000): Promise<void> {
+            const startedAt = Date.now();
+
+            while (Date.now() - startedAt < maxMs) {
+                const progress = await this.fetchSyncProgress();
+
+                if (progress?.complete) {
+                    if (progress.entities_failed > 0) {
+                        const failed = progress.entities
+                            .filter(e => e.status === 'failed')
+                            .map(e => e.label)
+                            .join(', ');
+                        this.error = `Some data could not be imported: ${failed}.`;
+                    }
+
+                    // Figures on screen are stale until the sync lands.
+                    await this.fetchSummary();
+                    await this.fetchStatus(true);
+                    return;
+                }
+
+                await new Promise(resolve => setTimeout(resolve, intervalMs));
+            }
+
+            this.error = 'Sync is taking longer than expected. '
+                + 'It may still be running in the background, or the queue worker may be stopped.';
         },
 
         async disconnect(): Promise<void> {

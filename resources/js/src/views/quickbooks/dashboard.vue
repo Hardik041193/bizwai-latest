@@ -59,7 +59,8 @@
                     </div>
                     <span class="text-white-dark/70 text-sm">Total Revenue</span>
                 </div>
-                <div class="text-2xl font-bold text-success">{{ formatCurrency(qbStore.summary?.total_revenue) }}</div>
+                <div class="text-2xl font-bold text-success">{{ formatFigure(qbStore.summary?.total_revenue) }}</div>
+                <p v-if="figuresNote()" class="text-xs text-white-dark/60 mt-1">{{ figuresNote() }}</p>
                 <div class="text-xs text-white-dark/50 mt-1">Paid invoices</div>
             </div>
 
@@ -85,7 +86,7 @@
                     </div>
                     <span class="text-white-dark/70 text-sm">Total Expenses</span>
                 </div>
-                <div class="text-2xl font-bold text-danger">{{ formatCurrency(qbStore.summary?.total_expenses) }}</div>
+                <div class="text-2xl font-bold text-danger">{{ formatFigure(qbStore.summary?.total_expenses) }}</div>
                 <div class="text-xs text-white-dark/50 mt-1">All purchases</div>
             </div>
 
@@ -366,12 +367,19 @@ watch(activeTab, (tab) => {
 // ── Sync ──────────────────────────────────────────────────────────────────
 async function syncData() {
     try {
+        // Resolves when the sync has actually finished, not when it is queued,
+        // and refreshes the summary itself. The old fixed setTimeout was a
+        // guess at the duration and is no longer needed.
         await qbStore.triggerSync();
-        showToast('Sync started — data will refresh shortly.', 'success');
-        setTimeout(async () => {
-            await qbStore.fetchSummary();
-            await loadInvoices();
-        }, 1500);
+
+        // A clean resolve can still mean some entities failed.
+        if (qbStore.syncHadFailures || qbStore.error) {
+            showToast(qbStore.error ?? 'Sync finished, but some data could not be imported.', 'warning');
+        } else {
+            showToast('Sync complete, your data is up to date.', 'success');
+        }
+
+        await loadInvoices();
     } catch (_) {
         showToast(qbStore.error ?? 'Failed to trigger sync.', 'error');
     }
@@ -396,6 +404,30 @@ async function confirmDisconnect() {
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────
+// Revenue and expenses come from QuickBooks' Profit and Loss report. When it
+// could not be loaded they arrive as null, and must read as unavailable, not
+// as $0.00, which would be a confident wrong figure.
+function formatFigure(value: number | null | undefined): string {
+    if (qbStore.summary && value === null) return 'Unavailable';
+    return formatCurrency(value);
+}
+
+function figuresNote(): string {
+    const summary = qbStore.summary;
+    if (!summary) return '';
+
+    switch (summary.figures_error) {
+        case 'client_access_pending':
+            return 'Access is still being set up';
+        case 'quickbooks_reconnect_required':
+            return 'Reconnect QuickBooks to load these figures';
+        case 'quickbooks_report_unavailable':
+            return 'QuickBooks report unavailable, try refreshing';
+    }
+
+    return summary.accounting_basis ? `${summary.accounting_basis} basis, from QuickBooks` : '';
+}
+
 function formatCurrency(value: any): string {
     const num = parseFloat(value) || 0;
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num);

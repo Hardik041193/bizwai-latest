@@ -4,12 +4,16 @@ namespace App\Services\Ai;
 
 use App\Services\Ai\Tools\CompareFinancialPeriods;
 use App\Services\Ai\Tools\Contracts\AiTool;
+use App\Services\Ai\Tools\GetBills;
 use App\Services\Ai\Tools\GetCompanySummary;
+use App\Services\Ai\Tools\GetCreditMemos;
 use App\Services\Ai\Tools\GetCustomers;
 use App\Services\Ai\Tools\GetExpenses;
 use App\Services\Ai\Tools\GetInvoices;
+use App\Services\Ai\Tools\GetPayments;
 use App\Services\Ai\Tools\GetProfitAndLoss;
 use App\Services\Ai\Tools\GetRevenue;
+use App\Services\Ai\Tools\GetSalesReceipts;
 use App\Services\Ai\Tools\GetTransactions;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
@@ -30,6 +34,10 @@ class ToolRegistry
             new GetInvoices,
             new GetCustomers,
             new GetTransactions,
+            new GetBills,
+            new GetPayments,
+            new GetSalesReceipts,
+            new GetCreditMemos,
             new CompareFinancialPeriods,
         ];
 
