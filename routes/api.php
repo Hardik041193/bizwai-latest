@@ -38,6 +38,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/admin/dashboard/stats', [DashboardController::class, 'stats'])
         ->name('admin.dashboard.stats');
 
+    // ── Admin Dashboard Charts ──
+    Route::get('/admin/dashboard/charts', [DashboardController::class, 'charts'])
+        ->name('admin.dashboard.charts');
+
     // ── Admin: Users CRUD ──
     Route::prefix('admin/users')->name('admin.users.')->middleware('throttle:60,1')->group(function () {
         Route::get('/', [UserController::class, 'index'])->name('index');
