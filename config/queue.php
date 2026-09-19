@@ -38,7 +38,10 @@ return [
             'driver' => 'database',
             'table' => 'jobs',
             'queue' => 'default',
-            'retry_after' => 90,
+            // Must exceed the longest job's timeout. SyncQuickBooksDataJob may
+            // run for up to 600s, and a retry_after below that would hand the
+            // same job to a second worker mid-run, syncing the realm twice.
+            'retry_after' => (int) env('QUEUE_RETRY_AFTER', 900),
             'after_commit' => false,
         ],
 
