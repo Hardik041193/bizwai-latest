@@ -103,14 +103,19 @@ Route::middleware('auth:sanctum')->group(function () {
         // Read endpoints — covered by the global api limiter (no extra per-route throttle).
         Route::get('/status', [QuickBooksController::class, 'status'])->name('status');
         Route::get('/summary', [QuickBooksController::class, 'summary'])->name('summary');
-        Route::get('/executive-dashboard', [QuickBooksController::class, 'executiveDashboard'])->name('executive-dashboard');
         Route::get('/revenue-trend', [QuickBooksController::class, 'revenueTrend'])->name('revenue-trend');
         Route::get('/home-insights', [QuickBooksController::class, 'homeInsights'])->name('home-insights');
-        Route::get('/cash-flow', [CashFlowController::class, 'commandCenter'])->name('cash-flow');
-        Route::get('/profitability', [ProfitabilityController::class, 'center'])->name('profitability');
-        Route::get('/customers-collections', [CustomersCollectionsController::class, 'dashboard'])->name('customers-collections');
-        Route::get('/invoices-bills', [InvoicesBillsController::class, 'dashboard'])->name('invoices-bills');
-        Route::get('/expenses-vendors', [ExpensesVendorsController::class, 'dashboard'])->name('expenses-vendors');
+
+        // Graph dashboards: user-portal only (users.role = 'user'), never admins.
+        Route::middleware('role.user')->group(function () {
+            Route::get('/executive-dashboard', [QuickBooksController::class, 'executiveDashboard'])->name('executive-dashboard');
+            Route::get('/cash-flow', [CashFlowController::class, 'commandCenter'])->name('cash-flow');
+            Route::get('/profitability', [ProfitabilityController::class, 'center'])->name('profitability');
+            Route::get('/customers-collections', [CustomersCollectionsController::class, 'dashboard'])->name('customers-collections');
+            Route::get('/invoices-bills', [InvoicesBillsController::class, 'dashboard'])->name('invoices-bills');
+            Route::get('/expenses-vendors', [ExpensesVendorsController::class, 'dashboard'])->name('expenses-vendors');
+        });
+
         Route::get('/accounts', [QuickBooksController::class, 'accounts'])->name('accounts');
         Route::get('/customers', [QuickBooksController::class, 'customers'])->name('customers');
         Route::get('/invoices', [QuickBooksController::class, 'invoices'])->name('invoices');
