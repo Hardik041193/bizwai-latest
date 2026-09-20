@@ -9,42 +9,42 @@
             </li>
         </ul>
 
-        <div class="pt-5">
+        <div v-if="!qbStore.isConnected" class="panel mt-5">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 rounded-full bg-warning/20 flex items-center justify-center flex-shrink-0">
+                    <svg class="w-6 h-6 text-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M12 3a9 9 0 110 18A9 9 0 0112 3z"/>
+                    </svg>
+                </div>
+                <div class="flex-1">
+                    <h5 class="font-semibold text-base">QuickBooks Not Connected</h5>
+                    <p class="text-white-dark/70 text-sm">Connect your QuickBooks account to see your revenue, profit and expenses here.</p>
+                </div>
+                <router-link to="/quickbooks/connect" class="btn btn-success btn-sm gap-2 flex-shrink-0">
+                    Connect Now
+                </router-link>
+            </div>
+        </div>
+
+        <div v-else class="pt-5">
             <div class="grid xl:grid-cols-3 gap-6 mb-6">
                 <div class="panel h-full xl:col-span-2">
                     <div class="flex items-center justify-between dark:text-white-light mb-5">
                         <h5 class="font-semibold text-lg">Revenue</h5>
-                        <div class="dropdown ltr:ml-auto rtl:mr-auto">
-                            <Popper :placement="store.rtlClass === 'rtl' ? 'bottom-start' : 'bottom-end'" offsetDistance="0" class="align-middle">
-                                <a href="javascript:;">
-                                    <svg
-                                        class="w-5 h-5 text-black/70 dark:text-white/70 hover:!text-primary"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        xmlns="http://www.w3.org/2000/svg"
-                                    >
-                                        <circle cx="5" cy="12" r="2" stroke="currentColor" stroke-width="1.5" />
-                                        <circle opacity="0.5" cx="12" cy="12" r="2" stroke="currentColor" stroke-width="1.5" />
-                                        <circle cx="19" cy="12" r="2" stroke="currentColor" stroke-width="1.5" />
-                                    </svg>
-                                </a>
-                                <template #content="{ close }">
-                                    <ul @click="close()">
-                                        <li>
-                                            <a href="javascript:;">Weekly</a>
-                                        </li>
-                                        <li>
-                                            <a href="javascript:;">Monthly</a>
-                                        </li>
-                                        <li>
-                                            <a href="javascript:;">Yearly</a>
-                                        </li>
-                                    </ul>
-                                </template>
-                            </Popper>
-                        </div>
+                        <select
+                            v-model="trendPeriod"
+                            @change="setTrendPeriod(trendPeriod)"
+                            class="form-select w-32 text-sm ltr:ml-auto rtl:mr-auto"
+                        >
+                            <option value="weekly">Weekly</option>
+                            <option value="monthly">Monthly</option>
+                            <option value="yearly">Yearly</option>
+                        </select>
                     </div>
-                    <p class="text-lg dark:text-white-light/90">Total Profit <span class="text-primary ml-2">$10,840</span></p>
+                    <p class="text-lg dark:text-white-light/90">
+                        Net Profit <span class="text-primary ml-2">{{ formatFigure(qbStore.summary?.net_income) }}</span>
+                    </p>
+                    <p v-if="qbStore.revenueTrend?.error" class="text-xs text-white-dark/60 mt-1">{{ qbStore.revenueTrend.error }}</p>
                     <div class="relative">
                         <apexchart height="325" :options="revenueChart" :series="revenueSeries" class="bg-white dark:bg-black rounded-lg overflow-hidden">
                             <!-- loader -->
@@ -61,7 +61,13 @@
                     <div class="flex items-center mb-5">
                         <h5 class="font-semibold text-lg dark:text-white-light">Sales By Category</h5>
                     </div>
-                    <div>
+                    <p v-if="qbStore.homeInsights?.sales_by_category.error" class="text-xs text-white-dark/60 mb-2">
+                        {{ qbStore.homeInsights.sales_by_category.error }}
+                    </p>
+                    <div v-if="!salesByCategorySeries.length" class="min-h-[200px] grid place-content-center text-white-dark/50 text-sm">
+                        No revenue by customer yet this month.
+                    </div>
+                    <div v-else>
                         <apexchart height="460" :options="salesByCategory" :series="salesByCategorySeries" class="bg-white dark:bg-black rounded-lg overflow-hidden">
                             <!-- loader -->
                             <div class="min-h-[460px] grid place-content-center bg-white-light/30 dark:bg-dark dark:bg-opacity-[0.08]">
@@ -78,7 +84,7 @@
                 <div class="panel h-full sm:col-span-2 xl:col-span-1">
                     <div class="flex items-center mb-5">
                         <h5 class="font-semibold text-lg dark:text-white-light">
-                            Daily Sales <span class="block text-white-dark text-sm font-normal">Go to columns for details.</span>
+                            Daily Sales <span class="block text-white-dark text-sm font-normal">This week vs. last week.</span>
                         </h5>
                         <div class="ltr:ml-auto rtl:mr-auto relative">
                             <div class="w-11 h-11 text-warning bg-[#ffeccb] dark:bg-warning dark:text-[#ffeccb] grid place-content-center rounded-full">
@@ -94,7 +100,10 @@
                             </div>
                         </div>
                     </div>
-                    <div>
+                    <div v-if="!hasDailySalesData" class="min-h-[175px] grid place-content-center text-white-dark/50 text-sm">
+                        No sales in the last two weeks.
+                    </div>
+                    <div v-else>
                         <apexchart height="160" :options="dailySales" :series="dailySalesSeries" class="bg-white dark:bg-black rounded-lg overflow-hidden">
                             <!-- loader -->
                             <div class="min-h-[175px] grid place-content-center bg-white-light/30 dark:bg-dark dark:bg-opacity-[0.08]">
@@ -109,36 +118,8 @@
                 <div class="panel h-full">
                     <div class="flex items-center dark:text-white-light mb-5">
                         <h5 class="font-semibold text-lg">Summary</h5>
-                        <div class="dropdown ltr:ml-auto rtl:mr-auto">
-                            <Popper :placement="store.rtlClass === 'rtl' ? 'bottom-start' : 'bottom-end'" offsetDistance="0" class="align-middle">
-                                <a href="javascript:;">
-                                    <svg
-                                        class="w-5 h-5 text-black/70 dark:text-white/70 hover:!text-primary"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        xmlns="http://www.w3.org/2000/svg"
-                                    >
-                                        <circle cx="5" cy="12" r="2" stroke="currentColor" stroke-width="1.5" />
-                                        <circle opacity="0.5" cx="12" cy="12" r="2" stroke="currentColor" stroke-width="1.5" />
-                                        <circle cx="19" cy="12" r="2" stroke="currentColor" stroke-width="1.5" />
-                                    </svg>
-                                </a>
-                                <template #content="{ close }">
-                                    <ul @click="close()">
-                                        <li>
-                                            <a href="javascript:;">View Report</a>
-                                        </li>
-                                        <li>
-                                            <a href="javascript:;">Edit Report</a>
-                                        </li>
-                                        <li>
-                                            <a href="javascript:;">Mark as Done</a>
-                                        </li>
-                                    </ul>
-                                </template>
-                            </Popper>
-                        </div>
                     </div>
+                    <p v-if="figuresNote()" class="text-xs text-white-dark/60 -mt-3 mb-4">{{ figuresNote() }}</p>
                     <div class="space-y-9">
                         <div class="flex items-center">
                             <div class="w-9 h-9 ltr:mr-3 rtl:ml-3">
@@ -164,10 +145,10 @@
                             <div class="flex-1">
                                 <div class="flex font-semibold text-white-dark mb-2">
                                     <h6>Income</h6>
-                                    <p class="ltr:ml-auto rtl:mr-auto">$92,600</p>
+                                    <p class="ltr:ml-auto rtl:mr-auto">{{ formatFigure(qbStore.summary?.total_revenue) }}</p>
                                 </div>
                                 <div class="rounded-full h-2 bg-dark-light dark:bg-[#1b2e4b] shadow">
-                                    <div class="bg-gradient-to-r from-[#7579ff] to-[#b224ef] w-11/12 h-full rounded-full"></div>
+                                    <div class="bg-gradient-to-r from-[#7579ff] to-[#b224ef] h-full rounded-full" style="width: 100%"></div>
                                 </div>
                             </div>
                         </div>
@@ -198,10 +179,10 @@
                             <div class="flex-1">
                                 <div class="flex font-semibold text-white-dark mb-2">
                                     <h6>Profit</h6>
-                                    <p class="ltr:ml-auto rtl:mr-auto">$37,515</p>
+                                    <p class="ltr:ml-auto rtl:mr-auto">{{ formatFigure(qbStore.summary?.net_income) }}</p>
                                 </div>
                                 <div class="w-full rounded-full h-2 bg-dark-light dark:bg-[#1b2e4b] shadow">
-                                    <div class="bg-gradient-to-r from-[#3cba92] to-[#0ba360] w-full h-full rounded-full" style="width: 65%"></div>
+                                    <div class="bg-gradient-to-r from-[#3cba92] to-[#0ba360] h-full rounded-full" :style="{ width: profitPercent + '%' }"></div>
                                 </div>
                             </div>
                         </div>
@@ -225,10 +206,10 @@
                             <div class="flex-1">
                                 <div class="flex font-semibold text-white-dark mb-2">
                                     <h6>Expenses</h6>
-                                    <p class="ltr:ml-auto rtl:mr-auto">$55,085</p>
+                                    <p class="ltr:ml-auto rtl:mr-auto">{{ formatFigure(qbStore.summary?.total_expenses) }}</p>
                                 </div>
                                 <div class="w-full rounded-full h-2 bg-dark-light dark:bg-[#1b2e4b] shadow">
-                                    <div class="bg-gradient-to-r from-[#f09819] to-[#ff5858] w-full h-full rounded-full" style="width: 80%"></div>
+                                    <div class="bg-gradient-to-r from-[#f09819] to-[#ff5858] h-full rounded-full" :style="{ width: expensePercent + '%' }"></div>
                                 </div>
                             </div>
                         </div>
@@ -270,8 +251,8 @@
                             </div>
                         </div>
                         <h5 class="font-semibold text-2xl ltr:text-right rtl:text-left dark:text-white-light">
-                            3,192
-                            <span class="block text-sm font-normal">Total Orders</span>
+                            {{ qbStore.homeInsights?.total_orders.total ?? 0 }}
+                            <span class="block text-sm font-normal">Orders this month</span>
                         </h5>
                     </div>
                     <apexchart height="290" :options="totalOrders" :series="totalOrdersSeries" class="bg-white dark:bg-black rounded-lg overflow-hidden">
@@ -1007,11 +988,21 @@
     </div>
 </template>
 <script lang="ts" setup>
-    import { ref, computed } from 'vue';
+    import { ref, computed, onMounted } from 'vue';
     import apexchart from 'vue3-apexcharts';
-    
+
     import { useAppStore } from '@/stores/index';
+    import { useQuickBooksStore, type QBRevenueTrendPeriod } from '@/stores/quickbooks';
     const store = useAppStore();
+    const qbStore = useQuickBooksStore();
+
+    const trendPeriod = ref<QBRevenueTrendPeriod>('monthly');
+
+    // v-model on the <select> already updates trendPeriod before this fires,
+    // so this just re-fetches for whichever value it now holds.
+    async function setTrendPeriod(period: QBRevenueTrendPeriod) {
+        await qbStore.fetchRevenueTrend(period);
+    }
 
     // revenue
     const revenueChart = computed(() => {
@@ -1034,7 +1025,11 @@
             },
             stroke: {
                 show: true,
-                curve: 'smooth',
+                // Straight, not smooth: each point is a real weekly/monthly/
+                // yearly total. A spline curve overshoots between sparse
+                // points (yearly is only ~5 of them) and draws a bell-shaped
+                // hump that doesn't correspond to any actual period's value.
+                curve: 'straight',
                 width: 2,
                 lineCap: 'square',
             },
@@ -1046,26 +1041,9 @@
                 top: 22,
             },
             colors: isDark ? ['#2196f3', '#e7515a'] : ['#1b55e2', '#e7515a'],
-            markers: {
-                discrete: [
-                    {
-                        seriesIndex: 0,
-                        dataPointIndex: 6,
-                        fillColor: '#1b55e2',
-                        strokeColor: 'transparent',
-                        size: 7,
-                    },
-                    {
-                        seriesIndex: 1,
-                        dataPointIndex: 5,
-                        fillColor: '#e7515a',
-                        strokeColor: 'transparent',
-                        size: 7,
-                    },
-                ],
-            },
-            labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+            labels: qbStore.revenueTrend?.labels ?? [],
             xaxis: {
+                categories: qbStore.revenueTrend?.labels ?? [],
                 axisBorder: {
                     show: false,
                 },
@@ -1154,18 +1132,48 @@
         };
     });
 
-    const revenueSeries = ref([
-        {
-            name: 'Income',
-            data: [16800, 16800, 15500, 17800, 15500, 17000, 19000, 16000, 15000, 17000, 14000, 17000],
-        },
-        {
-            name: 'Expenses',
-            data: [16500, 17500, 16200, 17300, 16000, 19500, 16000, 17000, 16000, 19000, 18000, 19000],
-        },
+    const revenueSeries = computed(() => [
+        { name: 'Revenue', data: qbStore.revenueTrend?.revenue ?? [] },
+        { name: 'Profit', data: qbStore.revenueTrend?.profit ?? [] },
     ]);
 
-    // sales by category
+    // ── Summary bars, scaled against revenue ────────────────────────────────
+    function percentOf(part: number | null | undefined, whole: number | null | undefined): number {
+        if (!whole || whole <= 0 || part === null || part === undefined) return 0;
+        return Math.max(0, Math.min(100, Math.round((part / whole) * 100)));
+    }
+
+    const profitPercent = computed(() => percentOf(qbStore.summary?.net_income, qbStore.summary?.total_revenue));
+    const expensePercent = computed(() => percentOf(qbStore.summary?.total_expenses, qbStore.summary?.total_revenue));
+
+    // Revenue and expenses come from QuickBooks' Profit and Loss report. When
+    // it could not be loaded they arrive as null, and must read as
+    // unavailable, not as $0.00, which would be a confident wrong figure.
+    function formatFigure(value: number | null | undefined): string {
+        if (qbStore.summary && value === null) return 'Unavailable';
+        const num = typeof value === 'number' ? value : 0;
+        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num);
+    }
+
+    function figuresNote(): string {
+        const summary = qbStore.summary;
+        if (!summary) return '';
+
+        switch (summary.figures_error) {
+            case 'client_access_pending':
+                return 'Access is still being set up';
+            case 'quickbooks_reconnect_required':
+                return 'Reconnect QuickBooks to load these figures';
+            case 'quickbooks_report_unavailable':
+                return 'QuickBooks report unavailable, try refreshing';
+        }
+
+        return summary.accounting_basis ? `${summary.accounting_basis} basis, from QuickBooks` : '';
+    }
+
+    // ── Sales by category: revenue by customer, this month ──────────────────
+    const salesByCategorySeries = computed(() => qbStore.homeInsights?.sales_by_category.data ?? []);
+
     const salesByCategory = computed(() => {
         const isDark = store.theme === 'dark' || store.isDarkMode ? true : false;
         return {
@@ -1182,7 +1190,7 @@
                 width: 25,
                 colors: isDark ? '#0e1726' : '#fff',
             },
-            colors: isDark ? ['#5c1ac3', '#e2a03f', '#e7515a', '#e2a03f'] : ['#e2a03f', '#5c1ac3', '#e7515a'],
+            colors: ['#4361ee', '#805dca', '#00ab55', '#e2a03f', '#e7515a'],
             legend: {
                 position: 'bottom',
                 horizontalAlign: 'center',
@@ -1209,12 +1217,10 @@
                             },
                             value: {
                                 show: true,
-                                fontSize: '26px',
+                                fontSize: '20px',
                                 color: isDark ? '#bfc9d4' : undefined,
                                 offsetY: 16,
-                                formatter: (val: any) => {
-                                    return val;
-                                },
+                                formatter: (val: any) => `$${Number(val).toLocaleString()}`,
                             },
                             total: {
                                 show: true,
@@ -1222,119 +1228,81 @@
                                 color: '#888ea8',
                                 fontSize: '29px',
                                 formatter: (w: any) => {
-                                    return w.globals.seriesTotals.reduce(function (a: any, b: any) {
-                                        return a + b;
-                                    }, 0);
+                                    const total = w.globals.seriesTotals.reduce((a: number, b: number) => a + b, 0);
+                                    return `$${Math.round(total).toLocaleString()}`;
                                 },
                             },
                         },
                     },
                 },
             },
-            labels: ['Apparel', 'Sports', 'Others'],
+            labels: qbStore.homeInsights?.sales_by_category.labels ?? [],
             states: {
-                hover: {
-                    filter: {
-                        type: 'none',
-                        value: 0.15,
-                    },
-                },
-                active: {
-                    filter: {
-                        type: 'none',
-                        value: 0.15,
-                    },
-                },
+                hover: { filter: { type: 'none', value: 0.15 } },
+                active: { filter: { type: 'none', value: 0.15 } },
             },
         };
     });
 
-    const salesByCategorySeries = ref([985, 737, 270]);
+    // ── Daily sales: this week vs. last week ─────────────────────────────────
+    const dailySalesSeries = computed(() => [
+        { name: 'This Week', data: qbStore.homeInsights?.daily_sales.this_week ?? [] },
+        { name: 'Last Week', data: qbStore.homeInsights?.daily_sales.last_week ?? [] },
+    ]);
 
-    // daily sales
+    // A 100%-stacked bar chart renders nothing visible when every value is
+    // zero, which reads as broken rather than empty — show a message instead.
+    const hasDailySalesData = computed(() => {
+        const daily = qbStore.homeInsights?.daily_sales;
+        if (!daily) return false;
+        return [...daily.this_week, ...daily.last_week].some(v => v > 0);
+    });
+
     const dailySales = computed(() => {
-        const isDark = store.theme === 'dark' || store.isDarkMode ? true : false;
         return {
             chart: {
                 height: 160,
                 type: 'bar',
                 fontFamily: 'Plus Jakarta Sans, sans-serif',
-                toolbar: {
-                    show: false,
-                },
+                toolbar: { show: false },
                 stacked: true,
                 stackType: '100%',
             },
-            dataLabels: {
-                enabled: false,
-            },
-            stroke: {
-                show: true,
-                width: 1,
-            },
+            dataLabels: { enabled: false },
+            stroke: { show: true, width: 1 },
             colors: ['#e2a03f', '#e0e6ed'],
             responsive: [
                 {
                     breakpoint: 480,
-                    options: {
-                        legend: {
-                            position: 'bottom',
-                            offsetX: -10,
-                            offsetY: 0,
-                        },
-                    },
+                    options: { legend: { position: 'bottom', offsetX: -10, offsetY: 0 } },
                 },
             ],
             xaxis: {
-                labels: {
-                    show: false,
-                },
-                categories: ['Sun', 'Mon', 'Tue', 'Wed', 'Thur', 'Fri', 'Sat'],
+                labels: { show: false },
+                categories: qbStore.homeInsights?.daily_sales.categories ?? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
             },
-            yaxis: {
-                show: false,
-            },
-            fill: {
-                opacity: 1,
-            },
+            yaxis: { show: false },
+            fill: { opacity: 1 },
             plotOptions: {
-                bar: {
-                    horizontal: false,
-                    columnWidth: '25%',
-                },
+                bar: { horizontal: false, columnWidth: '25%' },
             },
-            legend: {
-                show: false,
-            },
+            legend: { show: false },
             grid: {
                 show: false,
-                xaxis: {
-                    lines: {
-                        show: false,
-                    },
-                },
-                padding: {
-                    top: 10,
-                    right: -20,
-                    bottom: -20,
-                    left: -20,
-                },
+                xaxis: { lines: { show: false } },
+                padding: { top: 10, right: -20, bottom: -20, left: -20 },
+            },
+            tooltip: {
+                y: { formatter: (value: number) => `$${value.toLocaleString()}` },
             },
         };
     });
 
-    const dailySalesSeries = ref([
-        {
-            name: 'Sales',
-            data: [44, 55, 41, 67, 22, 43, 21],
-        },
-        {
-            name: 'Last Week',
-            data: [13, 23, 20, 8, 13, 27, 33],
-        },
+    // ── Total orders: this month, with a 10-day sparkline ────────────────────
+    const totalOrdersSeries = computed(() => [
+        { name: 'Orders', data: qbStore.homeInsights?.total_orders.sparkline ?? [] },
     ]);
 
-    // total orders
     const totalOrders = computed(() => {
         const isDark = store.theme === 'dark' || store.isDarkMode ? true : false;
         return {
@@ -1342,27 +1310,13 @@
                 height: 290,
                 type: 'area',
                 fontFamily: 'Plus Jakarta Sans, sans-serif',
-                sparkline: {
-                    enabled: true,
-                },
+                sparkline: { enabled: true },
             },
-            stroke: {
-                curve: 'smooth',
-                width: 2,
-            },
+            stroke: { curve: 'smooth', width: 2 },
             colors: isDark ? ['#00ab55'] : ['#00ab55'],
-            labels: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'],
-            yaxis: {
-                min: 0,
-                show: false,
-            },
+            yaxis: { min: 0, show: false },
             grid: {
-                padding: {
-                    top: 125,
-                    right: 0,
-                    bottom: 0,
-                    left: 0,
-                },
+                padding: { top: 125, right: 0, bottom: 0, left: 0 },
             },
             fill: {
                 opacity: 1,
@@ -1370,24 +1324,24 @@
                 gradient: {
                     type: 'vertical',
                     shadeIntensity: 1,
-                    inverseColors: !1,
+                    inverseColors: false,
                     opacityFrom: 0.3,
                     opacityTo: 0.05,
                     stops: [100, 100],
                 },
             },
-            tooltip: {
-                x: {
-                    show: false,
-                },
-            },
+            tooltip: { x: { show: false } },
         };
     });
 
-    const totalOrdersSeries = ref([
-        {
-            name: 'Sales',
-            data: [28, 40, 36, 52, 38, 60, 38, 52, 36, 40],
-        },
-    ]);
+    onMounted(async () => {
+        await qbStore.fetchStatus(true);
+        if (qbStore.isConnected) {
+            await Promise.all([
+                qbStore.fetchSummary(),
+                qbStore.fetchRevenueTrend(trendPeriod.value),
+                qbStore.fetchHomeInsights(),
+            ]);
+        }
+    });
 </script>

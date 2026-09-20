@@ -83,6 +83,267 @@ export interface QBSummary {
     };
 }
 
+export interface QBMoneyCard {
+    value: number | null;
+    formatted: string | null;
+    subtext: string | null;
+}
+
+export interface QBExecutiveDashboard {
+    sync_warning: {
+        status: 'partial' | 'syncing';
+        failed_entities: string[];
+        pending_entities: string[];
+    } | null;
+    ceo_overview: {
+        cash: QBMoneyCard;
+        revenue_mtd: QBMoneyCard;
+        net_profit: QBMoneyCard & { margin_percentage: number | null };
+        ar_overdue: QBMoneyCard;
+    };
+    side_metrics: {
+        revenue_mtd: string | null;
+        active_customers: number;
+        cash_flow: string | null;
+        open_invoices: number;
+    };
+    charts: {
+        revenue_profit_trend: {
+            labels: string[];
+            datasets: Array<{ name: string; color: string; data: number[] }>;
+            error: string | null;
+        };
+        business_health_score: {
+            score: number | null;
+            status: string;
+            max_score: number;
+        };
+    };
+}
+
+export type QBRevenueTrendPeriod = 'weekly' | 'monthly' | 'yearly';
+
+export interface QBRevenueTrend {
+    period: QBRevenueTrendPeriod;
+    labels: string[];
+    revenue: number[];
+    profit: number[];
+    error: string | null;
+}
+
+export interface QBHomeInsights {
+    sales_by_category: {
+        labels: string[];
+        data: number[];
+        error: string | null;
+    };
+    daily_sales: {
+        categories: string[];
+        this_week: number[];
+        last_week: number[];
+    };
+    total_orders: {
+        total: number;
+        sparkline: number[];
+    };
+}
+
+export interface QBCashFlow {
+    restricted: boolean;
+    sync_warning: {
+        status: string;
+        incomplete_entities: string[];
+    } | null;
+    top_cards: {
+        cash_today: QBMoneyCard;
+        thirty_day_ending: QBMoneyCard;
+        runway: {
+            value: number | null;
+            unit: 'weeks';
+            formatted: string;
+            subtext: string;
+        };
+        cash_risk: {
+            status: 'Watch' | 'Healthy' | 'Unknown';
+            subtext: string;
+        };
+    };
+    cash_forecast_chart: {
+        minimum_safe_cash: number;
+        data_points: Array<{ day: number; projected_balance: number }>;
+    };
+    cash_actions: Array<{
+        type: 'Collect' | 'Delay' | 'Review' | 'Ask AI';
+        message: string;
+        action_payload: string;
+    }>;
+    cash_drivers: {
+        money_coming_in: {
+            open_invoices: number;
+            overdue: number;
+            expected_this_week: number;
+        };
+        money_going_out: {
+            bills_due_14_days: number | null;
+            payroll_estimate: number;
+            vendor_payments: number | null;
+        };
+        questions_to_ask: string[];
+    };
+    side_rail: {
+        revenue_mtd: string | null;
+        active_customers: number;
+        cash_flow: string | null;
+        open_invoices: number;
+    };
+}
+
+export interface QBProfitability {
+    sync_warning: {
+        status: string;
+        incomplete_entities: string[];
+    } | null;
+    summary_cards: {
+        gross_profit: QBMoneyCard;
+        net_profit: QBMoneyCard;
+        profit_change: {
+            percentage: number | null;
+            formatted: string | null;
+            subtext: string;
+        };
+        break_even: {
+            value: number | null;
+            formatted: string | null;
+            subtext: string;
+        };
+    };
+    profit_bridge_waterfall: {
+        stages: Array<{
+            label: string;
+            amount: number | null;
+            display: string;
+            type: 'positive' | 'negative' | 'total';
+            color: string;
+        }>;
+    };
+    most_profitable_customers: Array<{
+        name: string;
+        profit: string | null;
+        margin_percentage: number;
+    }>;
+    suggested_questions: string[];
+    side_metrics: {
+        revenue_mtd: string | null;
+        active_customers: number;
+        cash_flow: string | null;
+        open_invoices: number;
+    };
+}
+
+export interface QBCustomersCollections {
+    sync_warning: {
+        status: string;
+        incomplete_entities: string[];
+    } | null;
+    summary_cards: {
+        active_customers: { value: number; change_text: string };
+        top_5_share: { percentage: number | null; formatted: string | null; subtext: string };
+        overdue_ar: { value: number; formatted: string | null; subtext: string };
+        avg_collection: { value: number | null; unit: 'days'; formatted: string; subtext: string };
+    };
+    customer_priority_list: Array<{
+        customer: string;
+        revenue: string | null;
+        open_ar: string | null;
+        risk: 'Low' | 'Med' | 'High';
+    }>;
+    customer_concentration_risk: {
+        top_1_percentage: number;
+        top_2_to_5_percentage: number;
+        other_percentage: number;
+    };
+    suggested_questions: string[];
+    side_metrics: {
+        revenue_mtd: string | null;
+        active_customers: number;
+        cash_flow: string | null;
+        open_invoices: number;
+    };
+}
+
+export interface QBInvoicesBills {
+    restricted_bills: boolean;
+    sync_warning: {
+        status: string;
+        incomplete_entities: string[];
+    } | null;
+    summary_cards: {
+        open_invoices: { count: number; total_unpaid: number; formatted: string; subtext: string };
+        overdue: { count: number; total_past_due: number; formatted: string; subtext: string };
+        bills_due: { value: number | null; formatted: string | null; subtext: string };
+        net_ar_ap: { value: number | null; formatted: string | null; subtext: string };
+    };
+    ar_aging: Array<{
+        bracket: string;
+        amount: number;
+        formatted: string | null;
+        color: string;
+        percentage: number;
+    }>;
+    collection_priority: Array<{
+        rank: number;
+        customer: string;
+        amount: string;
+        detail: string;
+    }>;
+    bills_due_timeline: Record<'today' | 'seven_days' | 'fourteen_days' | 'thirty_days', {
+        label: string;
+        amount: number | null;
+        formatted: string | null;
+    }>;
+    side_metrics: {
+        revenue_mtd: string | null;
+        active_customers: number;
+        cash_flow: string | null;
+        open_invoices: number;
+    };
+}
+
+export interface QBExpensesVendors {
+    restricted: boolean;
+    sync_warning: {
+        status: string;
+        incomplete_entities: string[];
+    } | null;
+    summary_cards: {
+        total_expenses: { value: number; formatted: string | null; change_percentage: number | null; subtext: string };
+        top_vendor: { name: string | null; value: number | null; formatted: string | null };
+        recurring_spend: { value: number; formatted: string | null; subtext: string };
+        anomalies: { count: number; formatted: string; subtext: string };
+    };
+    expense_categories: Array<{
+        category: string;
+        amount: number;
+        formatted: string | null;
+        color: string;
+        percentage: number;
+    }>;
+    expense_ai_checks: Array<{
+        type: string;
+        severity: 'danger' | 'warning' | 'info' | 'purple';
+        title: string;
+        detail: string;
+        action_type: string;
+    }>;
+    suggested_questions: string[];
+    side_metrics: {
+        revenue_mtd: string | null;
+        active_customers: number;
+        cash_flow: string | null;
+        open_invoices: number;
+    };
+}
+
 export interface QBAccount {
     id: number;
     qbo_id: string;
@@ -145,6 +406,14 @@ interface QBState {
     status: QBStatus | null;
     statusFetchedAt: number | null;
     summary: QBSummary | null;
+    executiveDashboard: QBExecutiveDashboard | null;
+    revenueTrend: QBRevenueTrend | null;
+    homeInsights: QBHomeInsights | null;
+    cashFlow: QBCashFlow | null;
+    profitability: QBProfitability | null;
+    customersCollections: QBCustomersCollections | null;
+    invoicesBills: QBInvoicesBills | null;
+    expensesVendors: QBExpensesVendors | null;
     accounts: Paginated<QBAccount> | null;
     customers: Paginated<QBCustomer> | null;
     invoices: Paginated<QBInvoice> | null;
@@ -162,6 +431,14 @@ export const useQuickBooksStore = defineStore('quickbooks', {
         status: null,
         statusFetchedAt: null,
         summary: null,
+        executiveDashboard: null,
+        revenueTrend: null,
+        homeInsights: null,
+        cashFlow: null,
+        profitability: null,
+        customersCollections: null,
+        invoicesBills: null,
+        expensesVendors: null,
         accounts: null,
         customers: null,
         invoices: null,
@@ -253,6 +530,104 @@ export const useQuickBooksStore = defineStore('quickbooks', {
                 this.summary = data;
             } catch (err: any) {
                 this.error = err.response?.data?.message ?? 'Failed to load summary.';
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async fetchExecutiveDashboard(): Promise<void> {
+            this.loading = true;
+            this.error = null;
+            try {
+                const { data } = await axios.get('/api/quickbooks/executive-dashboard');
+                this.executiveDashboard = data;
+            } catch (err: any) {
+                this.error = err.response?.data?.message ?? 'Failed to load the executive dashboard.';
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async fetchRevenueTrend(period: QBRevenueTrendPeriod = 'monthly'): Promise<void> {
+            this.error = null;
+            try {
+                const { data } = await axios.get('/api/quickbooks/revenue-trend', { params: { period } });
+                this.revenueTrend = data;
+            } catch (err: any) {
+                this.error = err.response?.data?.message ?? 'Failed to load the revenue trend.';
+            }
+        },
+
+        async fetchHomeInsights(): Promise<void> {
+            this.error = null;
+            try {
+                const { data } = await axios.get('/api/quickbooks/home-insights');
+                this.homeInsights = data;
+            } catch (err: any) {
+                this.error = err.response?.data?.message ?? 'Failed to load dashboard insights.';
+            }
+        },
+
+        async fetchCashFlow(): Promise<void> {
+            this.loading = true;
+            this.error = null;
+            try {
+                const { data } = await axios.get('/api/quickbooks/cash-flow');
+                this.cashFlow = data;
+            } catch (err: any) {
+                this.error = err.response?.data?.message ?? 'Failed to load the cash flow command center.';
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async fetchProfitability(): Promise<void> {
+            this.loading = true;
+            this.error = null;
+            try {
+                const { data } = await axios.get('/api/quickbooks/profitability');
+                this.profitability = data;
+            } catch (err: any) {
+                this.error = err.response?.data?.message ?? 'Failed to load the profitability center.';
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async fetchCustomersCollections(): Promise<void> {
+            this.loading = true;
+            this.error = null;
+            try {
+                const { data } = await axios.get('/api/quickbooks/customers-collections');
+                this.customersCollections = data;
+            } catch (err: any) {
+                this.error = err.response?.data?.message ?? 'Failed to load customers and collections.';
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async fetchInvoicesBills(): Promise<void> {
+            this.loading = true;
+            this.error = null;
+            try {
+                const { data } = await axios.get('/api/quickbooks/invoices-bills');
+                this.invoicesBills = data;
+            } catch (err: any) {
+                this.error = err.response?.data?.message ?? 'Failed to load invoices and bills.';
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async fetchExpensesVendors(): Promise<void> {
+            this.loading = true;
+            this.error = null;
+            try {
+                const { data } = await axios.get('/api/quickbooks/expenses-vendors');
+                this.expensesVendors = data;
+            } catch (err: any) {
+                this.error = err.response?.data?.message ?? 'Failed to load expenses and vendors.';
             } finally {
                 this.loading = false;
             }
