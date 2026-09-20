@@ -6,6 +6,7 @@ use App\Exceptions\QuickBooksReauthorizationRequired;
 use App\Models\QuickBooksSyncState;
 use App\Models\QuickBooksToken;
 use Carbon\CarbonInterface;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
@@ -141,6 +142,58 @@ class QuickBooksReports
     }
 
     /**
+     * Revenue and profit per period, from the same report the headline
+     * figures come from, summarized by QuickBooks into calendar weeks,
+     * months or years so the series always agrees with profitAndLoss() for
+     * the same range.
+     *
+     * @param  string  $summarizeBy  QuickBooks' own bucket names: Week, Month or Year
+     * @param  array<int, string>  $customerIds  empty for the whole company
+     * @return array<int, array{label: string, revenue: float, profit: float}>
+     */
+    public function trend(
+        QuickBooksToken $token,
+        CarbonInterface $start,
+        CarbonInterface $end,
+        string $summarizeBy = 'Week',
+        array $customerIds = []
+    ): array {
+        $report = $this->fetch($token, $start, $end, $customerIds, ['summarize_column_by' => $summarizeBy]);
+        $sections = $this->sections($report['Rows']['Row'] ?? []);
+
+        $income = $sections['Income']['Summary']['ColData'] ?? [];
+        $otherIncome = $sections['OtherIncome']['Summary']['ColData'] ?? [];
+        $costOfGoods = $sections['COGS']['Summary']['ColData'] ?? [];
+        $expenses = $sections['Expenses']['Summary']['ColData'] ?? [];
+        $otherExpenses = $sections['OtherExpenses']['Summary']['ColData'] ?? [];
+
+        $weeks = [];
+
+        foreach ($report['Columns']['Column'] ?? [] as $index => $column) {
+            $title = $column['ColTitle'] ?? '';
+
+            // The first column labels the rows; QuickBooks appends its own
+            // "Total" column last. Neither is a week.
+            if ($index === 0 || $title === '' || stripos($title, 'total') !== false) {
+                continue;
+            }
+
+            $revenue = $this->number($income[$index]['value'] ?? '') + $this->number($otherIncome[$index]['value'] ?? '');
+            $expense = $this->number($costOfGoods[$index]['value'] ?? '')
+                + $this->number($expenses[$index]['value'] ?? '')
+                + $this->number($otherExpenses[$index]['value'] ?? '');
+
+            $weeks[] = [
+                'label' => $title,
+                'revenue' => round($revenue, 2),
+                'profit' => round($revenue - $expense, 2),
+            ];
+        }
+
+        return $weeks;
+    }
+
+    /**
      * @param  array<int, string>  $customerIds
      * @param  array<string, string>  $extra
      * @return array<string, mixed>
@@ -172,9 +225,24 @@ class QuickBooksReports
         ]));
 
         return Cache::remember($key, now()->addHours(self::CACHE_HOURS), function () use ($token, $params) {
-            $token = $this->quickBooks->refreshTokenIfNeeded($token);
+            try {
+                $token = $this->quickBooks->refreshTokenIfNeeded($token);
+                $accessToken = $token->access_token;
+            } catch (DecryptException $e) {
+                // access_token/refresh_token are stored with Laravel's
+                // `encrypted` cast, keyed to APP_KEY. A MAC failure here means
+                // the ciphertext cannot be read with the app's current key —
+                // no retry or reauthorization inside the OAuth flow can fix
+                // it, only reconnecting QuickBooks so a fresh token is issued
+                // and re-encrypted. Surfacing it as "reconnect required" (the
+                // same signal a rejected refresh token gives) tells the user
+                // the accurate next step instead of "try again later".
+                throw new QuickBooksReauthorizationRequired(
+                    'QuickBooks connection is corrupted and must be reconnected: '.$e->getMessage()
+                );
+            }
 
-            $response = Http::withToken($token->access_token)
+            $response = Http::withToken($accessToken)
                 ->accept('application/json')
                 ->get("{$this->quickBooks->apiBaseUrl()}/v3/company/{$token->realm_id}/reports/ProfitAndLoss",
                     $params + ['minorversion' => '65']);

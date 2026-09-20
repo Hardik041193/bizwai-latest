@@ -2,9 +2,14 @@
 
 use App\Http\Controllers\AiChatController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\CashFlowController;
 use App\Http\Controllers\ContactController;
+use App\Http\Controllers\CustomersCollectionsController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\ExpensesVendorsController;
+use App\Http\Controllers\InvoicesBillsController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ProfitabilityController;
 use App\Http\Controllers\QuickBooksController;
 use App\Http\Controllers\UserController; // ← ADD THIS
 use Illuminate\Support\Facades\Route;
@@ -98,6 +103,14 @@ Route::middleware('auth:sanctum')->group(function () {
         // Read endpoints — covered by the global api limiter (no extra per-route throttle).
         Route::get('/status', [QuickBooksController::class, 'status'])->name('status');
         Route::get('/summary', [QuickBooksController::class, 'summary'])->name('summary');
+        Route::get('/executive-dashboard', [QuickBooksController::class, 'executiveDashboard'])->name('executive-dashboard');
+        Route::get('/revenue-trend', [QuickBooksController::class, 'revenueTrend'])->name('revenue-trend');
+        Route::get('/home-insights', [QuickBooksController::class, 'homeInsights'])->name('home-insights');
+        Route::get('/cash-flow', [CashFlowController::class, 'commandCenter'])->name('cash-flow');
+        Route::get('/profitability', [ProfitabilityController::class, 'center'])->name('profitability');
+        Route::get('/customers-collections', [CustomersCollectionsController::class, 'dashboard'])->name('customers-collections');
+        Route::get('/invoices-bills', [InvoicesBillsController::class, 'dashboard'])->name('invoices-bills');
+        Route::get('/expenses-vendors', [ExpensesVendorsController::class, 'dashboard'])->name('expenses-vendors');
         Route::get('/accounts', [QuickBooksController::class, 'accounts'])->name('accounts');
         Route::get('/customers', [QuickBooksController::class, 'customers'])->name('customers');
         Route::get('/invoices', [QuickBooksController::class, 'invoices'])->name('invoices');

@@ -7,6 +7,8 @@ use App\Jobs\SyncQuickBooksDataJob;
 use App\Models\QuickBooksAccount;
 use App\Models\QuickBooksCustomer;
 use App\Models\QuickBooksInvoice;
+use App\Models\QuickBooksPayment;
+use App\Models\QuickBooksSalesReceipt;
 use App\Models\QuickBooksSyncState;
 use App\Models\QuickBooksToken;
 use App\Models\QuickBooksTransaction;
@@ -331,6 +333,18 @@ class QuickBooksController extends Controller
      */
     private function profitAndLossToDate(QuickBooksToken $token): array
     {
+        return $this->profitAndLossForPeriod($token, Carbon::parse(QuickBooksReports::ALL_TIME_START), Carbon::now());
+    }
+
+    /**
+     * Profit and loss for an arbitrary period, or why it is missing. Shares
+     * the client-access and error handling with profitAndLossToDate() so
+     * every caller reports the same reasons for missing figures.
+     *
+     * @return array{0: array<string, mixed>|null, 1: string|null}
+     */
+    private function profitAndLossForPeriod(QuickBooksToken $token, Carbon $start, Carbon $end): array
+    {
         $customers = QuickBooksClientScope::reportCustomersForToken($token);
 
         if ($customers === null) {
@@ -338,13 +352,38 @@ class QuickBooksController extends Controller
         }
 
         try {
-            return [app(QuickBooksReports::class)->profitAndLoss(
-                $token, Carbon::parse(QuickBooksReports::ALL_TIME_START), Carbon::now(), $customers
-            ), null];
+            return [app(QuickBooksReports::class)->profitAndLoss($token, $start, $end, $customers), null];
         } catch (QuickBooksReauthorizationRequired $e) {
             return [null, 'quickbooks_reconnect_required'];
         } catch (RuntimeException $e) {
             Log::warning('QuickBooks report unavailable for the dashboard summary.', [
+                'realm_id' => $token->realm_id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [null, 'quickbooks_report_unavailable'];
+        }
+    }
+
+    /**
+     * Revenue/profit trend for a period, or why it is missing.
+     *
+     * @return array{0: array<int, array{label: string, revenue: float, profit: float}>|null, 1: string|null}
+     */
+    private function trendFor(QuickBooksToken $token, Carbon $start, Carbon $end, string $summarizeBy): array
+    {
+        $customers = QuickBooksClientScope::reportCustomersForToken($token);
+
+        if ($customers === null) {
+            return [null, 'client_access_pending'];
+        }
+
+        try {
+            return [app(QuickBooksReports::class)->trend($token, $start, $end, $summarizeBy, $customers), null];
+        } catch (QuickBooksReauthorizationRequired $e) {
+            return [null, 'quickbooks_reconnect_required'];
+        } catch (RuntimeException $e) {
+            Log::warning('QuickBooks trend report unavailable.', [
                 'realm_id' => $token->realm_id,
                 'error' => $e->getMessage(),
             ]);
@@ -571,5 +610,405 @@ class QuickBooksController extends Controller
             ],
             'is_personal' => ! $request->user()->isAdmin(),
         ]);
+    }
+
+    /**
+     * Executive Dashboard summary.
+     *
+     * CEO-level cards, side metrics, a weekly revenue/profit trend and a
+     * composite business health score, for the authenticated user's
+     * connected QuickBooks company. Revenue, expenses and profit always come
+     * from QuickBooks' own Profit and Loss report; nothing here is summed
+     * from documents, for the same reason summary() does not (see
+     * profitAndLossToDate()).
+     */
+    public function executiveDashboard(Request $request): JsonResponse
+    {
+        $token = $this->resolveToken($request);
+
+        if (! $token) {
+            return response()->json(['message' => 'QuickBooks is not connected.'], 422);
+        }
+
+        $realmId = $token->realm_id;
+        $now = Carbon::now();
+        $monthStart = $now->copy()->startOfMonth();
+
+        $invoiceQuery = QuickBooksInvoice::where('realm_id', $realmId);
+        $this->applySelectedClientToInvoices($invoiceQuery, $token);
+
+        $customerQuery = QuickBooksCustomer::where('realm_id', $realmId);
+        $this->applySelectedClientToCustomers($customerQuery, $token);
+
+        $paymentQuery = QuickBooksPayment::where('realm_id', $realmId);
+        QuickBooksClientScope::applyToQboIdAndSingleNameColumn($paymentQuery, $token, 'customer_qbo_id', 'customer_name');
+
+        $salesReceiptQuery = QuickBooksSalesReceipt::where('realm_id', $realmId);
+        QuickBooksClientScope::applyToQboIdAndSingleNameColumn($salesReceiptQuery, $token, 'customer_qbo_id', 'customer_name');
+
+        $transactionQuery = QuickBooksTransaction::where('realm_id', $realmId);
+        $this->applySelectedClientToTransactions($transactionQuery, $token);
+
+        // Sync watermark — a headline figure built on a failed or still-running
+        // sync is flagged rather than shown as if it were complete.
+        $progress = QuickBooksSyncState::progressFor($realmId);
+        $syncWarning = in_array($progress['status'], ['partial', 'syncing'], true) ? [
+            'status' => $progress['status'],
+            'failed_entities' => collect($progress['entities'])->where('status', 'failed')->pluck('label')->values(),
+            'pending_entities' => collect($progress['entities'])->whereIn('status', ['pending', 'syncing'])->pluck('label')->values(),
+        ] : null;
+
+        [$mtd, $mtdError] = $this->profitAndLossForPeriod($token, $monthStart, $now);
+        $revenue = $mtd['revenue'] ?? null;
+        $expenses = $mtd['total_expenses'] ?? null;
+        $netProfit = $mtd['net_income'] ?? null;
+        $margin = ($revenue !== null && $revenue != 0 && $netProfit !== null)
+            ? round($netProfit / $revenue * 100, 1)
+            : null;
+        $mtdNote = $mtdError ? $this->figuresErrorNote($mtdError) : null;
+
+        // Bank balances and expense accounts are company-level, not tied to a
+        // client — same gate bills use, mirrored here for a token.
+        $seesWholeCompany = QuickBooksClientScope::tokenSeesWholeCompany($token);
+        $cash = $seesWholeCompany
+            ? (float) QuickBooksAccount::where('realm_id', $realmId)->where('account_type', 'Bank')->sum('current_balance')
+            : null;
+
+        $arOverdue = (float) (clone $invoiceQuery)
+            ->where('balance', '>', 0)
+            ->whereDate('due_date', '<', $now->toDateString())
+            ->sum('balance');
+
+        $openInvoices = (clone $invoiceQuery)->where('balance', '>', 0)->where('status', '!=', 'Paid')->count();
+        $activeCustomers = (clone $customerQuery)->where('active', true)->count();
+
+        // Cash flow is a rough "money that moved" figure from the synced
+        // documents themselves, not from the P&L report, which reports profit
+        // on an accrual basis and has no notion of cash movement.
+        $cashFlow = (float) (
+            (clone $paymentQuery)->whereBetween('txn_date', [$monthStart, $now])->sum('total_amount')
+            + (clone $salesReceiptQuery)->whereBetween('txn_date', [$monthStart, $now])->sum('total_amount')
+            - (clone $transactionQuery)
+                ->whereIn('txn_type', ['Purchase', 'Expense'])
+                ->whereBetween('txn_date', [$monthStart, $now])
+                ->sum('amount')
+        );
+
+        $trendStart = $now->copy()->subWeeks(5)->startOfWeek();
+        [$trendWeeks, $trendError] = $this->trendFor($token, $trendStart, $now, 'Week');
+
+        $health = $this->businessHealthScore($arOverdue, $revenue, $margin, $cash);
+
+        return response()->json([
+            'sync_warning' => $syncWarning,
+            'ceo_overview' => [
+                'cash' => $this->moneyCard($cash, $seesWholeCompany ? 'Watch trend' : null),
+                'revenue_mtd' => $this->moneyCard($revenue, $mtdNote ?? 'On pace'),
+                'net_profit' => $this->moneyCard($netProfit, $margin === null ? $mtdNote : "{$margin}% margin")
+                    + ['margin_percentage' => $margin],
+                'ar_overdue' => $this->moneyCard($arOverdue, $arOverdue > 0 ? 'Needs action' : 'On track'),
+            ],
+            'side_metrics' => [
+                'revenue_mtd' => $this->abbreviateCurrency($revenue),
+                'active_customers' => $activeCustomers,
+                'cash_flow' => $this->abbreviateCurrency($cashFlow),
+                'open_invoices' => $openInvoices,
+            ],
+            'charts' => [
+                'revenue_profit_trend' => [
+                    'labels' => $trendWeeks !== null ? array_column($trendWeeks, 'label') : [],
+                    'datasets' => [
+                        [
+                            'name' => 'Revenue',
+                            'color' => '#2563eb',
+                            'data' => $trendWeeks !== null ? array_column($trendWeeks, 'revenue') : [],
+                        ],
+                        [
+                            'name' => 'Profit',
+                            'color' => '#10b981',
+                            'data' => $trendWeeks !== null ? array_column($trendWeeks, 'profit') : [],
+                        ],
+                    ],
+                    'error' => $trendError ? $this->figuresErrorNote($trendError) : null,
+                ],
+                'business_health_score' => $health,
+            ],
+        ]);
+    }
+
+    /**
+     * Revenue/profit trend for the home dashboard's Weekly/Monthly/Yearly
+     * toggle. Same QuickBooks report as the executive dashboard's trend,
+     * just over a different range and bucket size.
+     */
+    public function revenueTrend(Request $request): JsonResponse
+    {
+        $request->validate([
+            'period' => 'nullable|in:weekly,monthly,yearly',
+        ]);
+
+        $token = $this->resolveToken($request);
+
+        if (! $token) {
+            return response()->json(['message' => 'QuickBooks is not connected.'], 422);
+        }
+
+        $now = Carbon::now();
+        $period = $request->input('period', 'monthly');
+
+        [$start, $summarizeBy] = match ($period) {
+            'weekly' => [$now->copy()->subWeeks(11)->startOfWeek(), 'Week'],
+            'yearly' => [$now->copy()->subYears(4)->startOfYear(), 'Year'],
+            default => [$now->copy()->subMonths(11)->startOfMonth(), 'Month'],
+        };
+
+        [$trend, $error] = $this->trendFor($token, $start, $now, $summarizeBy);
+
+        return response()->json([
+            'period' => $period,
+            'labels' => $trend !== null ? array_column($trend, 'label') : [],
+            'revenue' => $trend !== null ? array_column($trend, 'revenue') : [],
+            'profit' => $trend !== null ? array_column($trend, 'profit') : [],
+            'error' => $error ? $this->figuresErrorNote($error) : null,
+        ]);
+    }
+
+    /**
+     * Home dashboard insights: revenue by customer, a 7-day sales comparison,
+     * and this month's order count with a short sparkline. All month-to-date
+     * or shorter, unlike summary()'s all-time figures, since these are meant
+     * to read as "what's happening lately" rather than headline totals.
+     */
+    public function homeInsights(Request $request): JsonResponse
+    {
+        $token = $this->resolveToken($request);
+
+        if (! $token) {
+            return response()->json(['message' => 'QuickBooks is not connected.'], 422);
+        }
+
+        $realmId = $token->realm_id;
+        $now = Carbon::now();
+        $monthStart = $now->copy()->startOfMonth();
+
+        $invoiceQuery = QuickBooksInvoice::where('realm_id', $realmId);
+        $this->applySelectedClientToInvoices($invoiceQuery, $token);
+
+        $salesReceiptQuery = QuickBooksSalesReceipt::where('realm_id', $realmId);
+        QuickBooksClientScope::applyToQboIdAndSingleNameColumn($salesReceiptQuery, $token, 'customer_qbo_id', 'customer_name');
+
+        // ── Sales by category: revenue by customer, month to date ──
+        $customers = QuickBooksClientScope::reportCustomersForToken($token);
+        $salesByCategory = ['labels' => [], 'data' => []];
+        $salesByCategoryError = null;
+
+        if ($customers === null) {
+            $salesByCategoryError = 'client_access_pending';
+        } else {
+            try {
+                $byCustomer = app(QuickBooksReports::class)->incomeByCustomer($token, $monthStart, $now, $customers);
+                $salesByCategory = $this->topCategoriesFrom($byCustomer);
+            } catch (QuickBooksReauthorizationRequired $e) {
+                $salesByCategoryError = 'quickbooks_reconnect_required';
+            } catch (RuntimeException $e) {
+                Log::warning('QuickBooks income-by-customer report unavailable for the home dashboard.', [
+                    'realm_id' => $realmId,
+                    'error' => $e->getMessage(),
+                ]);
+                $salesByCategoryError = 'quickbooks_report_unavailable';
+            }
+        }
+
+        // ── Daily sales: this 7-day window vs. the previous one ──
+        $todayStart = $now->copy()->startOfDay();
+        $thisWeekStart = $todayStart->copy()->subDays(6);
+        $lastWeekStart = $thisWeekStart->copy()->subDays(7);
+
+        $daily = $this->dailyTotals($invoiceQuery, $salesReceiptQuery, $lastWeekStart, $now);
+
+        $thisWeek = [];
+        $lastWeek = [];
+        $categories = [];
+
+        for ($i = 0; $i < 7; $i++) {
+            $thisDay = $thisWeekStart->copy()->addDays($i);
+            $categories[] = $thisDay->format('D');
+            $thisWeek[] = round($daily[$thisDay->toDateString()]['amount'] ?? 0, 2);
+            $lastWeek[] = round($daily[$lastWeekStart->copy()->addDays($i)->toDateString()]['amount'] ?? 0, 2);
+        }
+
+        // ── Total orders: this month, with a 10-day sparkline of daily counts ──
+        $ordersThisMonth = (clone $invoiceQuery)->whereBetween('txn_date', [$monthStart, $now])->count()
+            + (clone $salesReceiptQuery)->whereBetween('txn_date', [$monthStart, $now])->count();
+
+        $sparklineStart = $now->copy()->subDays(9)->startOfDay();
+        $sparklineDaily = $sparklineStart->greaterThanOrEqualTo($lastWeekStart)
+            ? $daily
+            : $this->dailyTotals($invoiceQuery, $salesReceiptQuery, $sparklineStart, $now);
+
+        $sparkline = [];
+        for ($i = 0; $i < 10; $i++) {
+            $sparkline[] = $sparklineDaily[$sparklineStart->copy()->addDays($i)->toDateString()]['count'] ?? 0;
+        }
+
+        return response()->json([
+            'sales_by_category' => [
+                'labels' => $salesByCategory['labels'],
+                'data' => $salesByCategory['data'],
+                'error' => $salesByCategoryError ? $this->figuresErrorNote($salesByCategoryError) : null,
+            ],
+            'daily_sales' => [
+                'categories' => $categories,
+                'this_week' => $thisWeek,
+                'last_week' => $lastWeek,
+            ],
+            'total_orders' => [
+                'total' => $ordersThisMonth,
+                'sparkline' => $sparkline,
+            ],
+        ]);
+    }
+
+    /**
+     * Top customers by income, the rest folded into "Others" so the donut
+     * stays readable regardless of how many customers had activity.
+     *
+     * @param  array<int, array{customer_name: string, income: float}>  $byCustomer
+     * @return array{labels: array<int, string>, data: array<int, float>}
+     */
+    private function topCategoriesFrom(array $byCustomer, int $limit = 4): array
+    {
+        $top = array_slice($byCustomer, 0, $limit);
+        $rest = array_slice($byCustomer, $limit);
+
+        $labels = array_map(fn ($c) => $c['customer_name'] !== '' ? $c['customer_name'] : 'Unnamed', $top);
+        $data = array_map(fn ($c) => round($c['income'], 2), $top);
+
+        if ($rest !== []) {
+            $labels[] = 'Others';
+            $data[] = round(array_sum(array_column($rest, 'income')), 2);
+        }
+
+        return ['labels' => $labels, 'data' => $data];
+    }
+
+    /**
+     * Revenue and order counts per calendar day across invoices and sales
+     * receipts combined, for a date range. Both are "sales" — an invoice
+     * that later gets a payment, or a receipt paid at the point of sale.
+     *
+     * @return array<string, array{amount: float, count: int}>
+     */
+    private function dailyTotals($invoiceQuery, $salesReceiptQuery, Carbon $start, Carbon $end): array
+    {
+        $totals = [];
+
+        $addRows = function ($rows) use (&$totals) {
+            foreach ($rows as $row) {
+                $totals[$row->d]['amount'] = ($totals[$row->d]['amount'] ?? 0) + (float) $row->amt;
+                $totals[$row->d]['count'] = ($totals[$row->d]['count'] ?? 0) + (int) $row->cnt;
+            }
+        };
+
+        $addRows((clone $invoiceQuery)
+            ->whereBetween('txn_date', [$start, $end])
+            ->selectRaw('DATE(txn_date) as d, SUM(total_amount) as amt, COUNT(*) as cnt')
+            ->groupBy('d')
+            ->get());
+
+        $addRows((clone $salesReceiptQuery)
+            ->whereBetween('txn_date', [$start, $end])
+            ->selectRaw('DATE(txn_date) as d, SUM(total_amount) as amt, COUNT(*) as cnt')
+            ->groupBy('d')
+            ->get());
+
+        return $totals;
+    }
+
+    /**
+     * A composite 0-100 index from AR overdue ratio, profit margin and cash
+     * runway. Any input that is unavailable (a pending sync, an unresolved
+     * client scope, or a non-admin who cannot see cash) drops its own weight
+     * from the total rather than failing the whole score.
+     */
+    private function businessHealthScore(float $arOverdue, ?float $revenue, ?float $margin, ?float $cash): array
+    {
+        $points = 0.0;
+        $maxPoints = 0.0;
+
+        if ($margin !== null) {
+            $points += max(0, min($margin, 30)) / 30 * 40;
+            $maxPoints += 40;
+        }
+
+        if ($revenue !== null) {
+            $overdueRatio = $revenue > 0 ? min($arOverdue / $revenue, 1) : ($arOverdue > 0 ? 1 : 0);
+            $points += (1 - $overdueRatio) * 30;
+            $maxPoints += 30;
+        }
+
+        if ($cash !== null && $revenue !== null) {
+            $monthlyExpenses = $revenue - ($margin !== null ? $revenue * $margin / 100 : 0);
+            $runwayMonths = $monthlyExpenses > 0 ? $cash / $monthlyExpenses : 3;
+            $points += min($runwayMonths, 3) / 3 * 30;
+            $maxPoints += 30;
+        }
+
+        if ($maxPoints === 0.0) {
+            return ['score' => null, 'status' => 'Not enough data yet', 'max_score' => 100];
+        }
+
+        $score = (int) round($points / $maxPoints * 100);
+
+        $status = match (true) {
+            $score >= 80 => 'Excellent',
+            $score >= 65 => 'Good - Watch cash',
+            $score >= 45 => 'Fair - Needs attention',
+            default => 'Poor - Act now',
+        };
+
+        return ['score' => $score, 'status' => $status, 'max_score' => 100];
+    }
+
+    /**
+     * @return array{value: float|null, formatted: string|null, subtext: string|null}
+     */
+    private function moneyCard(?float $value, ?string $subtext): array
+    {
+        return [
+            'value' => $value,
+            'formatted' => $this->abbreviateCurrency($value),
+            'subtext' => $subtext,
+        ];
+    }
+
+    private function abbreviateCurrency(?float $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $sign = $value < 0 ? '-' : '';
+        $abs = abs($value);
+
+        if ($abs >= 1_000_000) {
+            return $sign.'$'.round($abs / 1_000_000, 1).'M';
+        }
+
+        if ($abs >= 1_000) {
+            return $sign.'$'.round($abs / 1_000, 1).'K';
+        }
+
+        return $sign.'$'.number_format($abs, 0);
+    }
+
+    private function figuresErrorNote(string $error): string
+    {
+        return match ($error) {
+            'client_access_pending' => 'Access is still being set up',
+            'quickbooks_reconnect_required' => 'Reconnect QuickBooks to load these figures',
+            'quickbooks_report_unavailable' => 'QuickBooks report unavailable',
+            default => 'Unavailable',
+        };
     }
 }

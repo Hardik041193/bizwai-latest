@@ -68,6 +68,42 @@ const routes: RouteRecordRaw[] = [
         component: () => import(/* webpackChunkName: "qb-dashboard" */ '../views/quickbooks/dashboard.vue'),
         meta: { requiresAuth: true, requiresAdmin: true },
     },
+    {
+        path: '/quickbooks/executive',
+        name: 'quickbooks-executive',
+        component: () => import(/* webpackChunkName: "qb-executive" */ '../views/quickbooks/executive-dashboard.vue'),
+        meta: { requiresAuth: true },
+    },
+    {
+        path: '/quickbooks/cash-flow',
+        name: 'quickbooks-cash-flow',
+        component: () => import(/* webpackChunkName: "qb-cash-flow" */ '../views/quickbooks/cash-flow-dashboard.vue'),
+        meta: { requiresAuth: true },
+    },
+    {
+        path: '/quickbooks/profitability',
+        name: 'quickbooks-profitability',
+        component: () => import(/* webpackChunkName: "qb-profitability" */ '../views/quickbooks/profitability-dashboard.vue'),
+        meta: { requiresAuth: true },
+    },
+    {
+        path: '/quickbooks/customers-collections',
+        name: 'quickbooks-customers-collections',
+        component: () => import(/* webpackChunkName: "qb-customers-collections" */ '../views/quickbooks/customers-collections-dashboard.vue'),
+        meta: { requiresAuth: true },
+    },
+    {
+        path: '/quickbooks/invoices-bills',
+        name: 'quickbooks-invoices-bills',
+        component: () => import(/* webpackChunkName: "qb-invoices-bills" */ '../views/quickbooks/invoices-bills-dashboard.vue'),
+        meta: { requiresAuth: true },
+    },
+    {
+        path: '/quickbooks/expenses-vendors',
+        name: 'quickbooks-expenses-vendors',
+        component: () => import(/* webpackChunkName: "qb-expenses-vendors" */ '../views/quickbooks/expenses-vendors-dashboard.vue'),
+        meta: { requiresAuth: true },
+    },
     // ── QuickBooks (user portal — My Invoices) ──
     {
         path: '/quickbooks/portal',

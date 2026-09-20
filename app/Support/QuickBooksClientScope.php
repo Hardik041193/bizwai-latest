@@ -78,6 +78,18 @@ class QuickBooksClientScope
     }
 
     /**
+     * Whether the token's user may see company-level data that belongs to no
+     * client, such as bank accounts or supplier bills. Mirrors
+     * contextSeesWholeCompany() for callers that only have a token.
+     */
+    public static function tokenSeesWholeCompany(QuickBooksToken $token): bool
+    {
+        $scope = self::scopeOfToken($token);
+
+        return ($scope['resolved'] || $scope['is_admin']) && ! $scope['specific'];
+    }
+
+    /**
      * The customers a QuickBooks report must be filtered to, for the same scope
      * the query filters apply.
      *
