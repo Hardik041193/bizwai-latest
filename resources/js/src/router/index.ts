@@ -72,37 +72,37 @@ const routes: RouteRecordRaw[] = [
         path: '/quickbooks/executive',
         name: 'quickbooks-executive',
         component: () => import(/* webpackChunkName: "qb-executive" */ '../views/quickbooks/executive-dashboard.vue'),
-        meta: { requiresAuth: true },
+        meta: { requiresAuth: true, requiresUser: true },
     },
     {
         path: '/quickbooks/cash-flow',
         name: 'quickbooks-cash-flow',
         component: () => import(/* webpackChunkName: "qb-cash-flow" */ '../views/quickbooks/cash-flow-dashboard.vue'),
-        meta: { requiresAuth: true },
+        meta: { requiresAuth: true, requiresUser: true },
     },
     {
         path: '/quickbooks/profitability',
         name: 'quickbooks-profitability',
         component: () => import(/* webpackChunkName: "qb-profitability" */ '../views/quickbooks/profitability-dashboard.vue'),
-        meta: { requiresAuth: true },
+        meta: { requiresAuth: true, requiresUser: true },
     },
     {
         path: '/quickbooks/customers-collections',
         name: 'quickbooks-customers-collections',
         component: () => import(/* webpackChunkName: "qb-customers-collections" */ '../views/quickbooks/customers-collections-dashboard.vue'),
-        meta: { requiresAuth: true },
+        meta: { requiresAuth: true, requiresUser: true },
     },
     {
         path: '/quickbooks/invoices-bills',
         name: 'quickbooks-invoices-bills',
         component: () => import(/* webpackChunkName: "qb-invoices-bills" */ '../views/quickbooks/invoices-bills-dashboard.vue'),
-        meta: { requiresAuth: true },
+        meta: { requiresAuth: true, requiresUser: true },
     },
     {
         path: '/quickbooks/expenses-vendors',
         name: 'quickbooks-expenses-vendors',
         component: () => import(/* webpackChunkName: "qb-expenses-vendors" */ '../views/quickbooks/expenses-vendors-dashboard.vue'),
-        meta: { requiresAuth: true },
+        meta: { requiresAuth: true, requiresUser: true },
     },
     // ── QuickBooks (user portal — My Invoices) ──
     {
@@ -734,6 +734,7 @@ router.beforeEach(async (to, from, next) => {
     const isAuthLayout    = to.meta?.layout === 'auth';
     const isGuestOnly     = to.meta?.guestOnly === true;
     const requiresAdmin   = to.meta?.requiresAdmin === true;
+    const requiresUser    = to.meta?.requiresUser === true;
     const requiresAuth    = !isAuthLayout;
 
     // ── Verify-email pages: always reachable (token optional) ──
@@ -764,6 +765,11 @@ router.beforeEach(async (to, from, next) => {
     if (requiresAdmin && !isAdmin) {
         // Logged in as regular user trying to access admin area
         return next({ name: 'home' });
+    }
+
+    // ── User-portal-only pages (users.role = 'user'): admins go to their own area ──
+    if (requiresUser && isAdmin) {
+        return next({ name: 'admin-home' });
     }
 
     // ── After user login: redirect admin users away from the user dashboard ──
