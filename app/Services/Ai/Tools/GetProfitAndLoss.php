@@ -20,7 +20,7 @@ class GetProfitAndLoss implements AiTool
 
     public function description(): string
     {
-        return "Get revenue, expenses and profit for a period from QuickBooks' own Profit and Loss report, on the company's accounting basis (accrual or cash), with the main sections of the report.";
+        return "Get revenue, expenses and profit for a period from QuickBooks' own Profit and Loss report, with the main sections of the report. It uses the company's own accounting basis unless accounting_method asks for cash or accrual. To compare both bases, call it twice, once with each method.";
     }
 
     public function parameters(): array
@@ -35,6 +35,7 @@ class GetProfitAndLoss implements AiTool
                 ],
                 'start_date' => ['type' => 'string', 'description' => 'Required when period is "custom". Format Y-m-d.'],
                 'end_date' => ['type' => 'string', 'description' => 'Required when period is "custom". Format Y-m-d.'],
+                'accounting_method' => ['type' => 'string', 'enum' => ['Cash', 'Accrual'], 'description' => "Optional. Report on this basis instead of the company's own. Omit it unless the user asks for a specific basis."],
             ],
             'required' => ['period'],
         ];
@@ -52,8 +53,10 @@ class GetProfitAndLoss implements AiTool
             $arguments['end_date'] ?? null
         );
 
-        return $this->withReports($context, function (QuickBooksReports $reports, QuickBooksToken $token, array $customers) use ($range) {
-            $pnl = $reports->profitAndLoss($token, $range['start'], $range['end'], $customers);
+        $method = in_array($arguments['accounting_method'] ?? null, ['Cash', 'Accrual'], true) ? $arguments['accounting_method'] : null;
+
+        return $this->withReports($context, function (QuickBooksReports $reports, QuickBooksToken $token, array $customers) use ($range, $method) {
+            $pnl = $reports->profitAndLoss($token, $range['start'], $range['end'], $customers, $method);
 
             return [
                 'period_label' => $range['label'],

@@ -4,6 +4,12 @@ namespace App\Services\Ai;
 
 use App\Services\Ai\Tools\CompareFinancialPeriods;
 use App\Services\Ai\Tools\Contracts\AiTool;
+use App\Services\Ai\Tools\GetAccountBalances;
+use App\Services\Ai\Tools\GetAging;
+use App\Services\Ai\Tools\GetBalanceSheet;
+use App\Services\Ai\Tools\GetCashFlow;
+use App\Services\Ai\Tools\GetFinancialTrend;
+use App\Services\Ai\Tools\GetSyncStatus;
 use App\Services\Ai\Tools\GetBills;
 use App\Services\Ai\Tools\GetCompanySummary;
 use App\Services\Ai\Tools\GetCreditMemos;
@@ -39,6 +45,12 @@ class ToolRegistry
             new GetSalesReceipts,
             new GetCreditMemos,
             new CompareFinancialPeriods,
+            new GetFinancialTrend,
+            new GetBalanceSheet,
+            new GetCashFlow,
+            new GetAccountBalances,
+            new GetAging,
+            new GetSyncStatus,
         ];
 
         foreach ($tools as $tool) {
