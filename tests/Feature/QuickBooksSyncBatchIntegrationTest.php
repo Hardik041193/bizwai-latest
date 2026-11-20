@@ -132,8 +132,8 @@ class QuickBooksSyncBatchIntegrationTest extends TestCase
 
         // 2 single steps + accounts 5@2 (3 pages) + customers 3@2 (2) + invoices
         // 4@2 (3: an exact multiple needs a trailing empty page) + one empty page
-        // each for purchases, bills, payments, sales receipts and credit memos (5).
-        $this->assertSame(15, (int) $batch->total_jobs, 'next pages must be added to the live batch');
+        // each for the other eleven data entities, from purchases to transfers.
+        $this->assertSame(21, (int) $batch->total_jobs, 'next pages must be added to the live batch');
         $this->assertSame(0, (int) $batch->pending_jobs);
         $this->assertSame(0, (int) $batch->failed_jobs);
         $this->assertNotNull($batch->finished_at);
@@ -221,8 +221,8 @@ class QuickBooksSyncBatchIntegrationTest extends TestCase
         $batch = DB::table('job_batches')->sole();
 
         // 3 as above, plus the full sync added to the same batch: accounts 5@2
-        // (3 pages) and one page each for the other seven data entities.
-        $this->assertSame(13, (int) $batch->total_jobs);
+        // (3 pages) and one page each for the other thirteen data entities.
+        $this->assertSame(19, (int) $batch->total_jobs);
         $this->assertNotNull($batch->finished_at);
         $this->assertSame(0, (int) $batch->pending_jobs);
 

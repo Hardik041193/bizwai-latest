@@ -5,14 +5,20 @@ namespace App\Services;
 use App\Exceptions\QuickBooksReauthorizationRequired;
 use App\Models\QuickBooksAccount;
 use App\Models\QuickBooksBill;
+use App\Models\QuickBooksBillPayment;
 use App\Models\QuickBooksCreditMemo;
 use App\Models\QuickBooksCustomer;
+use App\Models\QuickBooksDeposit;
 use App\Models\QuickBooksInvoice;
 use App\Models\QuickBooksPayment;
+use App\Models\QuickBooksRefundReceipt;
 use App\Models\QuickBooksSalesReceipt;
 use App\Models\QuickBooksSyncState;
 use App\Models\QuickBooksToken;
 use App\Models\QuickBooksTransaction;
+use App\Models\QuickBooksTransfer;
+use App\Models\QuickBooksVendor;
+use App\Models\QuickBooksVendorCredit;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -44,6 +50,12 @@ class QuickBooksService
         'payments',
         'sales_receipts',
         'credit_memos',
+        'vendors',
+        'bill_payments',
+        'vendor_credits',
+        'refund_receipts',
+        'deposits',
+        'transfers',
     ];
 
     /**
@@ -687,6 +699,52 @@ class QuickBooksService
                 ),
                 'persist' => fn (QuickBooksToken $token, array $rows) => $this->persistCreditMemos($token, $rows),
             ],
+            'vendors' => [
+                'key' => 'Vendor',
+                'model' => QuickBooksVendor::class,
+                'query' => fn (QuickBooksToken $token) => 'SELECT * FROM Vendor',
+                'persist' => fn (QuickBooksToken $token, array $rows) => $this->persistVendors($token, $rows),
+            ],
+            'bill_payments' => [
+                'key' => 'BillPayment',
+                'model' => QuickBooksBillPayment::class,
+                'query' => fn (QuickBooksToken $token) => $this->entityQuery(
+                    'BillPayment', QuickBooksBillPayment::where('realm_id', $token->realm_id)->exists()
+                ),
+                'persist' => fn (QuickBooksToken $token, array $rows) => $this->persistBillPayments($token, $rows),
+            ],
+            'vendor_credits' => [
+                'key' => 'VendorCredit',
+                'model' => QuickBooksVendorCredit::class,
+                'query' => fn (QuickBooksToken $token) => $this->entityQuery(
+                    'VendorCredit', QuickBooksVendorCredit::where('realm_id', $token->realm_id)->exists()
+                ),
+                'persist' => fn (QuickBooksToken $token, array $rows) => $this->persistVendorCredits($token, $rows),
+            ],
+            'refund_receipts' => [
+                'key' => 'RefundReceipt',
+                'model' => QuickBooksRefundReceipt::class,
+                'query' => fn (QuickBooksToken $token) => $this->entityQuery(
+                    'RefundReceipt', QuickBooksRefundReceipt::where('realm_id', $token->realm_id)->exists()
+                ),
+                'persist' => fn (QuickBooksToken $token, array $rows) => $this->persistRefundReceipts($token, $rows),
+            ],
+            'deposits' => [
+                'key' => 'Deposit',
+                'model' => QuickBooksDeposit::class,
+                'query' => fn (QuickBooksToken $token) => $this->entityQuery(
+                    'Deposit', QuickBooksDeposit::where('realm_id', $token->realm_id)->exists()
+                ),
+                'persist' => fn (QuickBooksToken $token, array $rows) => $this->persistDeposits($token, $rows),
+            ],
+            'transfers' => [
+                'key' => 'Transfer',
+                'model' => QuickBooksTransfer::class,
+                'query' => fn (QuickBooksToken $token) => $this->entityQuery(
+                    'Transfer', QuickBooksTransfer::where('realm_id', $token->realm_id)->exists()
+                ),
+                'persist' => fn (QuickBooksToken $token, array $rows) => $this->persistTransfers($token, $rows),
+            ],
             default => throw new \InvalidArgumentException("Not a paged QuickBooks entity: {$entity}"),
         };
     }
@@ -1253,6 +1311,166 @@ class QuickBooksService
                     'total_tax' => $memo->TxnTaxDetail->TotalTax ?? 0,
                     'currency_ref' => $memo->CurrencyRef->value ?? null,
                     'line_items' => $this->salesLineItems($memo),
+                    'synced_at' => now(),
+                ]
+            );
+        }
+
+        return count($rows);
+    }
+
+    /**
+     * @param  array<\stdClass>  $rows
+     */
+    private function persistVendors(QuickBooksToken $token, array $rows): int
+    {
+        foreach ($rows as $vendor) {
+            QuickBooksVendor::updateOrCreate(
+                ['realm_id' => $token->realm_id, 'qbo_id' => $vendor->Id],
+                [
+                    'display_name' => $vendor->DisplayName ?? null,
+                    'company_name' => $vendor->CompanyName ?? null,
+                    'email' => $vendor->PrimaryEmailAddr->Address ?? null,
+                    'phone' => $vendor->PrimaryPhone->FreeFormNumber ?? null,
+                    'balance' => $vendor->Balance ?? 0,
+                    'active' => (bool) ($vendor->Active ?? true),
+                    'currency_ref' => $vendor->CurrencyRef->value ?? null,
+                    'synced_at' => now(),
+                ]
+            );
+        }
+
+        return count($rows);
+    }
+
+    /**
+     * @param  array<\stdClass>  $rows
+     */
+    private function persistBillPayments(QuickBooksToken $token, array $rows): int
+    {
+        foreach ($rows as $payment) {
+            $billIds = [];
+
+            foreach ((array) ($payment->Line ?? []) as $line) {
+                foreach ((array) ($line->LinkedTxn ?? []) as $linked) {
+                    if (($linked->TxnType ?? null) === 'Bill' && isset($linked->TxnId)) {
+                        $billIds[] = (string) $linked->TxnId;
+                    }
+                }
+            }
+
+            QuickBooksBillPayment::updateOrCreate(
+                ['realm_id' => $token->realm_id, 'qbo_id' => $payment->Id],
+                [
+                    'doc_number' => $payment->DocNumber ?? null,
+                    'vendor_name' => $payment->VendorRef->name ?? null,
+                    'vendor_qbo_id' => $payment->VendorRef->value ?? null,
+                    'txn_date' => $payment->TxnDate ?? null,
+                    'total_amount' => $payment->TotalAmt ?? 0,
+                    'pay_type' => $payment->PayType ?? null,
+                    // Paid by cheque from a bank account, or on a credit card.
+                    'account_name' => $payment->CheckPayment->BankAccountRef->name
+                        ?? $payment->CreditCardPayment->CCAccountRef->name
+                        ?? null,
+                    'bill_qbo_ids' => array_values(array_unique($billIds)),
+                    'currency_ref' => $payment->CurrencyRef->value ?? null,
+                    'synced_at' => now(),
+                ]
+            );
+        }
+
+        return count($rows);
+    }
+
+    /**
+     * @param  array<\stdClass>  $rows
+     */
+    private function persistVendorCredits(QuickBooksToken $token, array $rows): int
+    {
+        foreach ($rows as $credit) {
+            QuickBooksVendorCredit::updateOrCreate(
+                ['realm_id' => $token->realm_id, 'qbo_id' => $credit->Id],
+                [
+                    'doc_number' => $credit->DocNumber ?? null,
+                    'vendor_name' => $credit->VendorRef->name ?? null,
+                    'vendor_qbo_id' => $credit->VendorRef->value ?? null,
+                    'txn_date' => $credit->TxnDate ?? null,
+                    'total_amount' => $credit->TotalAmt ?? 0,
+                    'balance' => $credit->Balance ?? 0,
+                    'currency_ref' => $credit->CurrencyRef->value ?? null,
+                    'synced_at' => now(),
+                ]
+            );
+        }
+
+        return count($rows);
+    }
+
+    /**
+     * @param  array<\stdClass>  $rows
+     */
+    private function persistRefundReceipts(QuickBooksToken $token, array $rows): int
+    {
+        foreach ($rows as $refund) {
+            QuickBooksRefundReceipt::updateOrCreate(
+                ['realm_id' => $token->realm_id, 'qbo_id' => $refund->Id],
+                [
+                    'doc_number' => $refund->DocNumber ?? null,
+                    'customer_name' => $refund->CustomerRef->name ?? null,
+                    'customer_qbo_id' => $refund->CustomerRef->value ?? null,
+                    'txn_date' => $refund->TxnDate ?? null,
+                    'total_amount' => $refund->TotalAmt ?? 0,
+                    'payment_method' => $refund->PaymentMethodRef->name ?? null,
+                    'account_name' => $refund->DepositToAccountRef->name ?? null,
+                    'line_items' => $this->salesLineItems($refund),
+                    'currency_ref' => $refund->CurrencyRef->value ?? null,
+                    'synced_at' => now(),
+                ]
+            );
+        }
+
+        return count($rows);
+    }
+
+    /**
+     * @param  array<\stdClass>  $rows
+     */
+    private function persistDeposits(QuickBooksToken $token, array $rows): int
+    {
+        foreach ($rows as $deposit) {
+            QuickBooksDeposit::updateOrCreate(
+                ['realm_id' => $token->realm_id, 'qbo_id' => $deposit->Id],
+                [
+                    'txn_date' => $deposit->TxnDate ?? null,
+                    'total_amount' => $deposit->TotalAmt ?? 0,
+                    'account_name' => $deposit->DepositToAccountRef->name ?? null,
+                    'account_qbo_id' => $deposit->DepositToAccountRef->value ?? null,
+                    'line_count' => count((array) ($deposit->Line ?? [])),
+                    'description' => $deposit->PrivateNote ?? null,
+                    'currency_ref' => $deposit->CurrencyRef->value ?? null,
+                    'synced_at' => now(),
+                ]
+            );
+        }
+
+        return count($rows);
+    }
+
+    /**
+     * @param  array<\stdClass>  $rows
+     */
+    private function persistTransfers(QuickBooksToken $token, array $rows): int
+    {
+        foreach ($rows as $transfer) {
+            QuickBooksTransfer::updateOrCreate(
+                ['realm_id' => $token->realm_id, 'qbo_id' => $transfer->Id],
+                [
+                    'txn_date' => $transfer->TxnDate ?? null,
+                    'amount' => $transfer->Amount ?? 0,
+                    'from_account_name' => $transfer->FromAccountRef->name ?? null,
+                    'to_account_name' => $transfer->ToAccountRef->name ?? null,
+                    'description' => $transfer->PrivateNote ?? null,
+                    'currency_ref' => $transfer->CurrencyRef->value ?? null,
                     'synced_at' => now(),
                 ]
             );

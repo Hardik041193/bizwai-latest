@@ -36,6 +36,12 @@ class QuickBooksSyncState extends Model
         'payments',
         'sales_receipts',
         'credit_memos',
+        'vendors',
+        'bill_payments',
+        'vendor_credits',
+        'refund_receipts',
+        'deposits',
+        'transfers',
     ];
 
     /**
@@ -52,6 +58,12 @@ class QuickBooksSyncState extends Model
         'payments' => 'Payments received',
         'sales_receipts' => 'Sales receipts',
         'credit_memos' => 'Credit memos',
+        'vendors' => 'Vendors',
+        'bill_payments' => 'Bill payments',
+        'vendor_credits' => 'Vendor credits',
+        'refund_receipts' => 'Refunds',
+        'deposits' => 'Bank deposits',
+        'transfers' => 'Bank transfers',
     ];
 
     protected $fillable = [
