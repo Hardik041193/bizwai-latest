@@ -20,7 +20,7 @@ class GetCreditMemos implements AiTool
 
     public function description(): string
     {
-        return 'List credit memos (credits issued to customers, such as refunds or adjustments), optionally filtered by customer and period, most recent first, with the credit issued and the credit still available to use.';
+        return 'List credit memos (credits issued to customers, such as refunds or adjustments), optionally filtered by customer and period, most recent first, with the credit issued and the credit still available to use. Set unused_only to find customers who still have credit left to use.';
     }
 
     public function parameters(): array
@@ -29,6 +29,7 @@ class GetCreditMemos implements AiTool
             'type' => 'object',
             'properties' => [
                 'customer' => ['type' => 'string', 'description' => 'Filter by customer name (partial match).'],
+                'unused_only' => ['type' => 'boolean', 'description' => 'Only credit memos with credit still available to use.'],
                 'period' => [
                     'type' => 'string',
                     'description' => 'Optional period to filter by credit memo date. Omit for all time.',
@@ -55,6 +56,10 @@ class GetCreditMemos implements AiTool
 
         if (! empty($arguments['customer'])) {
             $query->where('customer_name', 'like', '%'.$arguments['customer'].'%');
+        }
+
+        if (! empty($arguments['unused_only'])) {
+            $query->where('remaining_credit', '>', 0);
         }
 
         if (! empty($arguments['period'])) {

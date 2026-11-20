@@ -20,7 +20,7 @@ class GetTransactions implements AiTool
 
     public function description(): string
     {
-        return 'List purchase/expense transactions, optionally filtered by type and/or period, most recent first.';
+        return 'List purchases the company paid for directly (cash, cheque and card expenses), with their count and total, optionally filtered by payee (the vendor paid), expense account, payment type and period, most recent first. Use it for what was spent with one vendor and for the transactions behind an expense figure. These are money going out to vendors: it is not a customer\'s history, so never use it to show what a customer was invoiced or paid.';
     }
 
     public function parameters(): array
@@ -29,6 +29,8 @@ class GetTransactions implements AiTool
             'type' => 'object',
             'properties' => [
                 'type' => ['type' => 'string', 'description' => 'Filter by transaction type (e.g. Cash, Check, CreditCard).'],
+                'payee' => ['type' => 'string', 'description' => 'Filter by the vendor or other payee the money went to (partial match).'],
+                'account' => ['type' => 'string', 'description' => 'Filter by expense account name (partial match), e.g. Advertising.'],
                 'period' => [
                     'type' => 'string',
                     'description' => 'Optional period to filter by transaction date. Omit for all time.',
@@ -57,6 +59,14 @@ class GetTransactions implements AiTool
             $query->where('txn_type', $arguments['type']);
         }
 
+        if (! empty($arguments['payee'])) {
+            $query->where('entity_name', 'like', '%'.$arguments['payee'].'%');
+        }
+
+        if (! empty($arguments['account'])) {
+            $query->where('account_name', 'like', '%'.$arguments['account'].'%');
+        }
+
         if (! empty($arguments['period'])) {
             $range = DateRangeResolver::resolve($arguments['period'], $arguments['start_date'] ?? null, $arguments['end_date'] ?? null);
             $query->whereBetween('txn_date', [$range['start']->toDateString(), $range['end']->toDateString()]);
@@ -81,6 +91,20 @@ class GetTransactions implements AiTool
         return $this->withDataFreshness([
             'transactions' => $transactions,
             'total_count' => $totalCount,
+            'total_amount' => round((float) (clone $query)->sum('amount'), 2),
+            'by_payee' => (clone $query)
+                ->whereNotNull('entity_name')
+                ->selectRaw('entity_name, COUNT(*) as txn_count, SUM(amount) as amount')
+                ->groupBy('entity_name')
+                ->orderByDesc('amount')
+                ->limit(25)
+                ->get()
+                ->map(fn ($row) => [
+                    'payee' => $row->entity_name,
+                    'transactions' => (int) $row->txn_count,
+                    'amount' => round((float) $row->amount, 2),
+                ])
+                ->all(),
         ], $context, ['transactions']);
     }
 }

@@ -74,17 +74,18 @@ class AiChatController extends Controller
         $user = $request->user();
         $context = QuickBooksAiContext::forUser($user);
 
-        // Only replay plain role/content turns as history — the stored
-        // tool_calls are an audit-log shape ({name, arguments, result}), not
-        // the provider wire shape (which needs a call `id`), and each turn's
-        // AiChatService::reply() runs its own fresh tool loop anyway.
-        $priorMessages = $session->messages()
-            ->get()
-            ->map(fn (AiChatMessage $m) => [
-                'role' => $m->role,
-                'content' => $m->content ?? '',
-            ])
-            ->all();
+        // Recent answers are replayed with the lookups behind them, so the
+        // model can see where its earlier figures came from.
+        $priorMessages = AiChatService::historyFromStoredMessages(
+            $session->messages()
+                ->get()
+                ->map(fn (AiChatMessage $m) => [
+                    'role' => $m->role,
+                    'content' => $m->content,
+                    'tool_calls' => $m->tool_calls,
+                ])
+                ->all()
+        );
 
         $userMessage = AiChatMessage::create([
             'session_id' => $session->id,
