@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
 /**
- * QuickBooks' own Profit and Loss report, cached.
+ * QuickBooks' own reports, cached: Profit and Loss, Balance Sheet and Cash Flow.
  *
  * Headline revenue, expense and profit figures come from here, not from summing
  * synced documents. QuickBooks books every line to an account (tax, cost of
@@ -54,9 +54,14 @@ class QuickBooksReports
         QuickBooksToken $token,
         CarbonInterface $start,
         CarbonInterface $end,
-        array $customerIds = []
+        array $customerIds = [],
+        ?string $accountingMethod = null
     ): array {
-        $report = $this->fetch($token, $start, $end, $customerIds);
+        // Without a method QuickBooks applies the company's own report basis.
+        // "Cash" or "Accrual" asks for that basis instead.
+        $extra = $accountingMethod === null ? [] : ['accounting_method' => $accountingMethod];
+
+        $report = $this->fetch($token, $start, $end, $customerIds, $extra);
         $sections = $this->sections($report['Rows']['Row'] ?? []);
         $total = fn (string $group) => $this->amount($sections[$group]['Summary']['ColData'] ?? []);
 
@@ -110,9 +115,11 @@ class QuickBooksReports
         QuickBooksToken $token,
         CarbonInterface $start,
         CarbonInterface $end,
-        array $customerIds = []
+        array $customerIds = [],
+        ?string $accountingMethod = null
     ): array {
-        $report = $this->fetch($token, $start, $end, $customerIds, ['summarize_column_by' => 'Customers']);
+        $report = $this->fetch($token, $start, $end, $customerIds, ['summarize_column_by' => 'Customers']
+            + ($accountingMethod === null ? [] : ['accounting_method' => $accountingMethod]));
         $sections = $this->sections($report['Rows']['Row'] ?? []);
         $income = $sections['Income']['Summary']['ColData'] ?? [];
         $net = $sections['NetIncome']['Summary']['ColData'] ?? [];
@@ -203,6 +210,7 @@ class QuickBooksReports
             $weeks[] = [
                 'label' => $title,
                 'revenue' => round($revenue, 2),
+                'expenses' => round($expense, 2),
                 'profit' => round($revenue - $expense, 2),
             ];
         }
@@ -211,8 +219,145 @@ class QuickBooksReports
     }
 
     /**
+     * The Balance Sheet as of a date: what the company owns, owes and is worth.
+     *
+     * Totals are QuickBooks' own section totals, so total_assets always equals
+     * total_liabilities + total_equity. The ratios are worked out here from
+     * those totals so nothing downstream has to do the arithmetic.
+     *
+     * @return array<string, mixed>
+     */
+    public function balanceSheet(QuickBooksToken $token, CarbonInterface $asOf): array
+    {
+        $report = $this->fetch($token, $asOf, $asOf, [], [], 'BalanceSheet');
+        $sections = $this->sections($report['Rows']['Row'] ?? []);
+        $total = fn (string $group) => $this->amount($sections[$group]['Summary']['ColData'] ?? []);
+        $lines = fn (string $group) => $this->accountLinesDeep($sections[$group] ?? []);
+
+        $currentAssets = $total('CurrentAssets');
+        $currentLiabilities = $total('CurrentLiabilities');
+        $liabilities = $total('Liabilities');
+        $equity = $total('Equity');
+
+        return [
+            'basis' => $report['Header']['ReportBasis'] ?? null,
+            'as_of' => $asOf->toDateString(),
+            'has_data' => ! $this->isEmpty($report),
+            'total_assets' => $total('TotalAssets'),
+            'current_assets' => $currentAssets,
+            'bank_accounts' => $total('BankAccounts'),
+            'accounts_receivable' => $total('AR'),
+            'other_current_assets' => $total('OtherCurrentAssets'),
+            'fixed_assets' => $total('FixedAssets'),
+            'other_assets' => $total('OtherAssets'),
+            'total_liabilities' => $liabilities,
+            'current_liabilities' => $currentLiabilities,
+            'accounts_payable' => $total('AP'),
+            'credit_cards' => $total('CreditCards'),
+            'other_current_liabilities' => $total('OtherCurrentLiabilities'),
+            'long_term_liabilities' => $total('LongTermLiabilities'),
+            'total_equity' => $equity,
+            'working_capital' => round($currentAssets - $currentLiabilities, 2),
+            // Null when the divisor is zero or negative: a ratio against
+            // negative equity is not a meaningful number to quote.
+            'current_ratio' => $currentLiabilities > 0 ? round($currentAssets / $currentLiabilities, 2) : null,
+            'debt_to_equity' => $equity > 0 ? round($liabilities / $equity, 2) : null,
+            'asset_accounts' => $lines('TotalAssets'),
+            'liability_accounts' => $lines('Liabilities'),
+            'equity_accounts' => $lines('Equity'),
+        ];
+    }
+
+    /**
+     * Assets, liabilities and equity at the end of each month in a range, from
+     * the same report summarized by QuickBooks into months.
+     *
+     * @return array<int, array{label: string, total_assets: float, total_liabilities: float, total_equity: float}>
+     */
+    public function balanceSheetByMonth(QuickBooksToken $token, CarbonInterface $start, CarbonInterface $end): array
+    {
+        $report = $this->fetch($token, $start, $end, [], ['summarize_column_by' => 'Month'], 'BalanceSheet');
+        $sections = $this->sections($report['Rows']['Row'] ?? []);
+
+        return $this->perColumn($report, fn (int $index) => [
+            'total_assets' => $this->number($sections['TotalAssets']['Summary']['ColData'][$index]['value'] ?? ''),
+            'total_liabilities' => $this->number($sections['Liabilities']['Summary']['ColData'][$index]['value'] ?? ''),
+            'total_equity' => $this->number($sections['Equity']['Summary']['ColData'][$index]['value'] ?? ''),
+        ]);
+    }
+
+    /**
+     * The Statement of Cash Flows for a period.
+     *
+     * @return array<string, mixed>
+     */
+    public function cashFlow(QuickBooksToken $token, CarbonInterface $start, CarbonInterface $end): array
+    {
+        $report = $this->fetch($token, $start, $end, [], [], 'CashFlow');
+        $sections = $this->sections($report['Rows']['Row'] ?? []);
+        $total = fn (string $group) => $this->amount(array_slice($sections[$group]['Summary']['ColData'] ?? [], 1));
+
+        return [
+            'start_date' => $start->toDateString(),
+            'end_date' => $end->toDateString(),
+            'has_data' => ! $this->isEmpty($report),
+            'operating_activities' => $total('OperatingActivities'),
+            'investing_activities' => $total('InvestingActivities'),
+            'financing_activities' => $total('FinancingActivities'),
+            'net_cash_change' => $total('CashIncrease'),
+            'cash_at_start' => $total('BeginningCash'),
+            'cash_at_end' => $total('EndingCash'),
+        ];
+    }
+
+    /**
+     * Cash movement for each month in a range.
+     *
+     * @return array<int, array{label: string, operating_activities: float, investing_activities: float, financing_activities: float, net_cash_change: float}>
+     */
+    public function cashFlowByMonth(QuickBooksToken $token, CarbonInterface $start, CarbonInterface $end): array
+    {
+        $report = $this->fetch($token, $start, $end, [], ['summarize_column_by' => 'Month'], 'CashFlow');
+        $sections = $this->sections($report['Rows']['Row'] ?? []);
+        $cell = fn (string $group, int $index) => $this->number($sections[$group]['Summary']['ColData'][$index]['value'] ?? '');
+
+        return $this->perColumn($report, fn (int $index) => [
+            'operating_activities' => $cell('OperatingActivities', $index),
+            'investing_activities' => $cell('InvestingActivities', $index),
+            'financing_activities' => $cell('FinancingActivities', $index),
+            'net_cash_change' => $cell('CashIncrease', $index),
+        ]);
+    }
+
+    /**
+     * One entry per period column of a report summarized over time, skipping
+     * the row-label column and QuickBooks' own "Total" column.
+     *
+     * @param  array<string, mixed>  $report
+     * @param  callable(int): array<string, float>  $values
+     * @return array<int, array<string, mixed>>
+     */
+    private function perColumn(array $report, callable $values): array
+    {
+        $periods = [];
+
+        foreach ($report['Columns']['Column'] ?? [] as $index => $column) {
+            $title = $column['ColTitle'] ?? '';
+
+            if ($index === 0 || $title === '' || stripos($title, 'total') !== false) {
+                continue;
+            }
+
+            $periods[] = ['label' => $title] + $values($index);
+        }
+
+        return $periods;
+    }
+
+    /**
      * @param  array<int, string>  $customerIds
      * @param  array<string, string>  $extra
+     * @param  string  $name  the QuickBooks report to fetch
      * @return array<string, mixed>
      */
     private function fetch(
@@ -220,7 +365,8 @@ class QuickBooksReports
         CarbonInterface $start,
         CarbonInterface $end,
         array $customerIds,
-        array $extra = []
+        array $extra = [],
+        string $name = 'ProfitAndLoss'
     ): array {
         $customerIds = array_values(array_unique(array_map('strval', $customerIds)));
         sort($customerIds);
@@ -236,12 +382,12 @@ class QuickBooksReports
         // request throws inside the callback and so is never cached.
         $key = 'quickbooks-report:'.sha1(json_encode([
             $token->realm_id,
-            'ProfitAndLoss',
+            $name,
             $params,
             (string) QuickBooksSyncState::where('realm_id', $token->realm_id)->max('last_synced_at'),
         ]));
 
-        return Cache::remember($key, now()->addHours(self::CACHE_HOURS), function () use ($token, $params) {
+        return Cache::remember($key, now()->addHours(self::CACHE_HOURS), function () use ($token, $params, $name) {
             try {
                 $token = $this->quickBooks->refreshTokenIfNeeded($token);
                 $accessToken = $token->access_token;
@@ -261,7 +407,7 @@ class QuickBooksReports
 
             $response = Http::withToken($accessToken)
                 ->accept('application/json')
-                ->get("{$this->quickBooks->apiBaseUrl()}/v3/company/{$token->realm_id}/reports/ProfitAndLoss",
+                ->get("{$this->quickBooks->apiBaseUrl()}/v3/company/{$token->realm_id}/reports/{$name}",
                     $params + ['minorversion' => '65']);
 
             if ($response->status() === 401) {
