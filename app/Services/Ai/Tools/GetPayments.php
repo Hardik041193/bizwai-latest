@@ -21,7 +21,7 @@ class GetPayments implements AiTool
 
     public function description(): string
     {
-        return 'List payments received from customers, optionally filtered by customer and period, most recent first, with the invoices each payment settled and the total received.';
+        return 'List payments received from customers, optionally filtered by customer and period, most recent first, with the invoices each payment settled, the total received and the total not yet applied to any invoice. Set unapplied_only to find payments with money left unapplied.';
     }
 
     public function parameters(): array
@@ -30,6 +30,7 @@ class GetPayments implements AiTool
             'type' => 'object',
             'properties' => [
                 'customer' => ['type' => 'string', 'description' => 'Filter by customer name (partial match).'],
+                'unapplied_only' => ['type' => 'boolean', 'description' => 'Only payments with an amount not yet applied to an invoice.'],
                 'period' => [
                     'type' => 'string',
                     'description' => 'Optional period to filter by payment date. Omit for all time.',
@@ -58,6 +59,10 @@ class GetPayments implements AiTool
             $query->where('customer_name', 'like', '%'.$arguments['customer'].'%');
         }
 
+        if (! empty($arguments['unapplied_only'])) {
+            $query->where('unapplied_amount', '>', 0);
+        }
+
         if (! empty($arguments['period'])) {
             $range = DateRangeResolver::resolve($arguments['period'], $arguments['start_date'] ?? null, $arguments['end_date'] ?? null);
             $query->whereBetween('txn_date', [$range['start']->toDateString(), $range['end']->toDateString()]);
@@ -65,6 +70,7 @@ class GetPayments implements AiTool
 
         $totalCount = (clone $query)->count();
         $totalReceived = (float) (clone $query)->sum('total_amount');
+        $totalUnapplied = (float) (clone $query)->sum('unapplied_amount');
         $payments = (clone $query)->orderByDesc('txn_date')->limit($limit)->get();
 
         // Invoice numbers for what each payment settled, looked up through the
@@ -91,6 +97,7 @@ class GetPayments implements AiTool
             ])->all(),
             'total_count' => $totalCount,
             'total_received' => $totalReceived,
+            'total_unapplied' => $totalUnapplied,
         ], $context, ['payments', 'invoices']);
     }
 }

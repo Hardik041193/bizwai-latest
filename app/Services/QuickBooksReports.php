@@ -89,6 +89,11 @@ class QuickBooksReports
             'revenue' => round($income + $otherIncome, 2),
             'total_expenses' => round($costOfGoods + $expenses + $otherExpenses, 2),
             'expense_accounts' => $expenseAccounts,
+            'expense_account_details' => array_merge(
+                $this->accountLinesDeep($sections['COGS'] ?? []),
+                $this->accountLinesDeep($sections['Expenses'] ?? []),
+                $this->accountLinesDeep($sections['OtherExpenses'] ?? []),
+            ),
         ];
     }
 
@@ -113,8 +118,20 @@ class QuickBooksReports
         $net = $sections['NetIncome']['Summary']['ColData'] ?? [];
 
         $customers = [];
+        $titles = [];
 
         foreach ($report['Columns']['Column'] ?? [] as $index => $column) {
+            $title = (string) ($column['ColTitle'] ?? '');
+            $titles[$title] = true;
+
+            // A customer with sub-customers gets its own column, one per
+            // sub-customer, and then a "Total <name>" column rolling them up.
+            // The rollup carries a customer id too, so counting it would count
+            // that income twice and list "Total <name>" as if it were a customer.
+            if (str_starts_with($title, 'Total ') && isset($titles[substr($title, 6)])) {
+                continue;
+            }
+
             $key = null;
             foreach ($column['MetaData'] ?? [] as $meta) {
                 if (($meta['Name'] ?? null) === 'ColKey') {
@@ -300,6 +317,32 @@ class QuickBooksReports
                 $lines[] = ['account' => $row['ColData'][0]['value'] ?? '', 'amount' => $this->amount($row['ColData'])];
             } elseif (isset($row['Summary']['ColData'])) {
                 $lines[] = ['account' => $row['Header']['ColData'][0]['value'] ?? '', 'amount' => $this->amount($row['Summary']['ColData'])];
+            }
+        }
+
+        return $lines;
+    }
+
+    /**
+     * Every account in a section at any depth, each with the parent account it
+     * sits under. A parent appears once with its own total, followed by its
+     * sub-accounts, so a search by name can find an account that the top-level
+     * list rolls up into its parent.
+     *
+     * @param  array<string, mixed>  $section
+     * @return array<int, array{account: string, parent: ?string, amount: float}>
+     */
+    private function accountLinesDeep(array $section, ?string $parent = null): array
+    {
+        $lines = [];
+
+        foreach ($section['Rows']['Row'] ?? [] as $row) {
+            if (isset($row['ColData'])) {
+                $lines[] = ['account' => $row['ColData'][0]['value'] ?? '', 'parent' => $parent, 'amount' => $this->amount($row['ColData'])];
+            } elseif (isset($row['Summary']['ColData'])) {
+                $name = $row['Header']['ColData'][0]['value'] ?? '';
+                $lines[] = ['account' => $name, 'parent' => $parent, 'amount' => $this->amount($row['Summary']['ColData'])];
+                $lines = array_merge($lines, $this->accountLinesDeep($row, $name));
             }
         }
 
