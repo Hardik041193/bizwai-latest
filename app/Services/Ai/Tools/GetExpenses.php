@@ -36,6 +36,7 @@ class GetExpenses implements AiTool
                 'start_date' => ['type' => 'string', 'description' => 'Required when period is "custom". Format Y-m-d.'],
                 'end_date' => ['type' => 'string', 'description' => 'Required when period is "custom". Format Y-m-d.'],
                 'account' => ['type' => 'string', 'description' => 'Optional search text matched against expense account and sub-account names, e.g. "advertising".'],
+                'accounting_method' => ['type' => 'string', 'enum' => ['Cash', 'Accrual'], 'description' => "Optional. Report on this basis instead of the company's own. Omit it unless the user asks for a specific basis."],
             ],
             'required' => ['period'],
         ];
@@ -55,8 +56,10 @@ class GetExpenses implements AiTool
 
         $search = trim((string) ($arguments['account'] ?? ''));
 
-        return $this->withReports($context, function (QuickBooksReports $reports, QuickBooksToken $token, array $customers) use ($range, $search) {
-            $pnl = $reports->profitAndLoss($token, $range['start'], $range['end'], $customers);
+        $method = in_array($arguments['accounting_method'] ?? null, ['Cash', 'Accrual'], true) ? $arguments['accounting_method'] : null;
+
+        return $this->withReports($context, function (QuickBooksReports $reports, QuickBooksToken $token, array $customers) use ($range, $search, $method) {
+            $pnl = $reports->profitAndLoss($token, $range['start'], $range['end'], $customers, $method);
 
             if ($search !== '') {
                 return [

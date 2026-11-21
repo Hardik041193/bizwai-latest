@@ -35,6 +35,7 @@ class GetRevenue implements AiTool
                 ],
                 'start_date' => ['type' => 'string', 'description' => 'Required when period is "custom". Format Y-m-d.'],
                 'end_date' => ['type' => 'string', 'description' => 'Required when period is "custom". Format Y-m-d.'],
+                'accounting_method' => ['type' => 'string', 'enum' => ['Cash', 'Accrual'], 'description' => "Optional. Report on this basis instead of the company's own. Omit it unless the user asks for a specific basis."],
             ],
             'required' => ['period'],
         ];
@@ -52,9 +53,11 @@ class GetRevenue implements AiTool
             $arguments['end_date'] ?? null
         );
 
-        return $this->withReports($context, function (QuickBooksReports $reports, QuickBooksToken $token, array $customers) use ($range) {
-            $pnl = $reports->profitAndLoss($token, $range['start'], $range['end'], $customers);
-            $topCustomers = array_slice($reports->incomeByCustomer($token, $range['start'], $range['end'], $customers), 0, 10);
+        $method = in_array($arguments['accounting_method'] ?? null, ['Cash', 'Accrual'], true) ? $arguments['accounting_method'] : null;
+
+        return $this->withReports($context, function (QuickBooksReports $reports, QuickBooksToken $token, array $customers) use ($range, $method) {
+            $pnl = $reports->profitAndLoss($token, $range['start'], $range['end'], $customers, $method);
+            $topCustomers = array_slice($reports->incomeByCustomer($token, $range['start'], $range['end'], $customers, $method), 0, 10);
 
             return [
                 'period_label' => $range['label'],
