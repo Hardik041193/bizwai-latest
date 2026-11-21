@@ -12,7 +12,8 @@ use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
 /**
- * QuickBooks' own reports, cached: Profit and Loss, Balance Sheet and Cash Flow.
+ * QuickBooks' own reports, cached: Profit and Loss (summary and detail),
+ * Balance Sheet and Cash Flow.
  *
  * Headline revenue, expense and profit figures come from here, not from summing
  * synced documents. QuickBooks books every line to an account (tax, cost of
@@ -216,6 +217,92 @@ class QuickBooksReports
         }
 
         return $weeks;
+    }
+
+    /**
+     * Every transaction line behind a Profit and Loss figure, from QuickBooks'
+     * Profit and Loss Detail report: the same figures as profitAndLoss(), broken
+     * down to the invoices, receipts, bills and expenses that make them up.
+     *
+     * @param  array<int, string>  $customerIds  empty for the whole company
+     * @return array<int, array{section: string, account: string, date: ?string, type: ?string, number: ?string, name: ?string, memo: ?string, amount: float}>
+     */
+    public function profitAndLossTransactions(
+        QuickBooksToken $token,
+        CarbonInterface $start,
+        CarbonInterface $end,
+        array $customerIds = []
+    ): array {
+        $report = $this->fetch($token, $start, $end, $customerIds, [], 'ProfitAndLossDetail');
+
+        // Cells are found by QuickBooks' own column keys, not by position.
+        $columns = [];
+
+        foreach ($report['Columns']['Column'] ?? [] as $index => $column) {
+            foreach ($column['MetaData'] ?? [] as $meta) {
+                if (($meta['Name'] ?? null) === 'ColKey') {
+                    $columns[(string) $meta['Value']] = $index;
+                }
+            }
+        }
+
+        $lines = [];
+        $this->collectDetailLines($report['Rows']['Row'] ?? [], [], $columns, $lines);
+
+        return $lines;
+    }
+
+    /**
+     * @param  array<int, mixed>  $rows
+     * @param  array<int, string>  $path  the section and account headers above these rows
+     * @param  array<string, int>  $columns
+     * @param  array<int, array<string, mixed>>  $lines
+     */
+    private function collectDetailLines(array $rows, array $path, array $columns, array &$lines): void
+    {
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+
+            if (isset($row['ColData']) && ($row['type'] ?? 'Data') === 'Data') {
+                $cell = fn (string $key) => isset($columns[$key]) ? (($row['ColData'][$columns[$key]]['value'] ?? '') ?: null) : null;
+
+                // Income and other income add to profit; everything else is a cost.
+                $section = 'expenses';
+
+                foreach ($path as $header) {
+                    if (in_array($header, ['Income', 'Other Income'], true)) {
+                        $section = 'income';
+                        break;
+                    }
+
+                    if (in_array($header, ['Cost of Goods Sold', 'Expenses', 'Other Expenses'], true)) {
+                        break;
+                    }
+                }
+
+                $lines[] = [
+                    'section' => $section,
+                    'account' => $path === [] ? '' : end($path),
+                    'date' => $cell('tx_date'),
+                    'type' => $cell('txn_type'),
+                    'number' => $cell('doc_num'),
+                    'name' => $cell('name'),
+                    'memo' => $cell('memo'),
+                    'amount' => $this->number($cell('subt_nat_amount') ?? ''),
+                ];
+
+                continue;
+            }
+
+            $children = is_array($row['Rows'] ?? null) ? ($row['Rows']['Row'] ?? []) : [];
+
+            if ($children !== []) {
+                $header = $row['Header']['ColData'][0]['value'] ?? null;
+                $this->collectDetailLines($children, $header ? [...$path, $header] : $path, $columns, $lines);
+            }
+        }
     }
 
     /**

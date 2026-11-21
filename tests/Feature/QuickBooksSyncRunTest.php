@@ -126,6 +126,8 @@ class QuickBooksSyncRunTest extends TestCase
             [
                 'company_info' => 1, 'client_matching' => 0, 'accounts' => 2, 'customers' => 1, 'invoices' => 2,
                 'transactions' => 1, 'bills' => 0, 'payments' => 0, 'sales_receipts' => 0, 'credit_memos' => 0,
+                'vendors' => 0, 'bill_payments' => 0, 'vendor_credits' => 0, 'refund_receipts' => 0,
+                'deposits' => 0, 'transfers' => 0,
             ],
             $counts
         );

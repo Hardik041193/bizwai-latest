@@ -6,6 +6,12 @@ use App\Services\Ai\Tools\CompareFinancialPeriods;
 use App\Services\Ai\Tools\Contracts\AiTool;
 use App\Services\Ai\Tools\GetAccountBalances;
 use App\Services\Ai\Tools\GetAging;
+use App\Services\Ai\Tools\GetBankMovements;
+use App\Services\Ai\Tools\GetBillPayments;
+use App\Services\Ai\Tools\GetProfitAndLossTransactions;
+use App\Services\Ai\Tools\GetRefunds;
+use App\Services\Ai\Tools\GetVendorCredits;
+use App\Services\Ai\Tools\GetVendors;
 use App\Services\Ai\Tools\GetBalanceSheet;
 use App\Services\Ai\Tools\GetCashFlow;
 use App\Services\Ai\Tools\GetFinancialTrend;
@@ -51,6 +57,12 @@ class ToolRegistry
             new GetAccountBalances,
             new GetAging,
             new GetSyncStatus,
+            new GetVendors,
+            new GetBillPayments,
+            new GetVendorCredits,
+            new GetRefunds,
+            new GetBankMovements,
+            new GetProfitAndLossTransactions,
         ];
 
         foreach ($tools as $tool) {
